@@ -4,7 +4,7 @@ import numpy as np
 
 NUM_CLASSES = 1
 VOLUME_SIZE = [32,32,32] # z,y,x
-LEARNING_RATE = 0.000005 #
+LEARNING_RATE = 0.00001 #
 KEEP_RATE = 0.6
 
 def conv3d(x, W,sk,sj,si):
@@ -45,7 +45,7 @@ def variable_on_cpu(name, shape, initializer):
         var = tf.get_variable(name, shape, initializer=initializer, dtype=dtype)
     return var
 
-def variable_with_weight_decay(name, shape, wd):
+def variable_with_weight_decay(name, shape, wd, is_training):
     """
     Weight decay is added only if one is specified.
 
@@ -61,7 +61,11 @@ def variable_with_weight_decay(name, shape, wd):
     var = variable_on_cpu(name,shape, tf.contrib.layers.xavier_initializer(dtype=dtype))
     if wd is not None:
         weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
-        tf.add_to_collection('losses', weight_decay)
+        if is_training == True:
+            tf.add_to_collection('losses', weight_decay)
+        else:
+            tf.add_to_collection('val_losses', weight_decay)
+
     return var
 
 def inference(volumes,batch_size,is_training):
@@ -78,62 +82,62 @@ def inference(volumes,batch_size,is_training):
     downsampled = avg_pool3d(volumes,k=2,name='avgpool1')
     # first layer
     with tf.variable_scope('conv1') as scope:
-        kernel = variable_with_weight_decay('weights',[3,3,3,1,64],0.0005)
+        kernel = variable_with_weight_decay('weights',[3,3,3,1,64],0.0005,is_training)
         biases = variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
         pre_activation = conv3d(downsampled, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
         conv1 = tf.nn.leaky_relu(pre_activation,name='conv1')
         activation_summary(conv1)
     pool1 = max_pool3d(conv1,1,2,2,name='pool1')
 
     # second layer
     with tf.variable_scope('conv2') as scope:
-        kernel = variable_with_weight_decay('weights',[3,3,3,64,128],0.0005)
+        kernel = variable_with_weight_decay('weights',[3,3,3,64,128],0.0005,is_training)
         biases = variable_on_cpu('biases', [128], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool1, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
         conv2 = tf.nn.leaky_relu(pre_activation,name='conv2')
         activation_summary(conv2)
     pool2 = max_pool3d(conv2,2,2,2,name='pool2')
 
     # third layer
     with tf.variable_scope('conv3a') as scope:
-        kernel = variable_with_weight_decay('weights',[3,3,3,128,256],0.0005)
+        kernel = variable_with_weight_decay('weights',[3,3,3,128,256],0.0005,is_training)
         biases = variable_on_cpu('biases', [256], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool2, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
         conv3a = tf.nn.leaky_relu(pre_activation,name='conv3a')
         activation_summary(conv3a)
 
     with tf.variable_scope('conv3b') as scope:
-        kernel = variable_with_weight_decay('weights',[3,3,3,256,256],0.0005)
+        kernel = variable_with_weight_decay('weights',[3,3,3,256,256],0.0005,is_training)
         biases = variable_on_cpu('biases', [256], tf.constant_initializer(0.0))
         pre_activation = conv3d(conv3a, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
         conv3b = tf.nn.leaky_relu(pre_activation,name='conv3b')
         activation_summary(conv3b) 
     pool3 = max_pool3d(conv3b,2,2,2,name='pool3')
 
     # fourth layer
     with tf.variable_scope('conv4a') as scope:
-        kernel = variable_with_weight_decay('weights',[3,3,3,256,512],0.0005)
+        kernel = variable_with_weight_decay('weights',[3,3,3,256,512],0.0005,is_training)
         biases = variable_on_cpu('biases', [512], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool3, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
         conv4a = tf.nn.leaky_relu(pre_activation,name='conv4a')
         activation_summary(conv4a)
 
     with tf.variable_scope('conv4b') as scope:
-        kernel = variable_with_weight_decay('weights',[3,3,3,512,512],0.0005)
+        kernel = variable_with_weight_decay('weights',[3,3,3,512,512],0.0005,is_training)
         biases = variable_on_cpu('biases', [512], tf.constant_initializer(0.0))
         pre_activation = conv3d(conv4a, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
         conv4b = tf.nn.leaky_relu(pre_activation,name='conv4b')
         activation_summary(conv4b) 
     pool4 = max_pool3d(conv4b,2,2,2,name='pool4')
     # bottleneck layer
     with tf.variable_scope('bottleneck') as scope:
-        kernel = variable_with_weight_decay('weights',[2,2,2,512,64],0.0005)
+        kernel = variable_with_weight_decay('weights',[2,2,2,512,64],0.0005,is_training)
         biases = variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool4, kernel,2,2,2) + biases
         pre_dropout = tf.nn.leaky_relu(pre_activation,name='bottle_neck_dropout')
@@ -142,7 +146,7 @@ def inference(volumes,batch_size,is_training):
   
     # output layer
     with tf.variable_scope('logistic') as scope:
-        kernel = variable_with_weight_decay('weights',[1,1,1,64,1],0.0005)
+        kernel = variable_with_weight_decay('weights',[1,1,1,64,1],0.0005,is_training)
         biases = variable_on_cpu('biases', [1], tf.constant_initializer(0.0))
         pre_activation = conv3d(bottle_neck, kernel,1,1,1) + biases
         logits = tf.squeeze(pre_activation,[2,3,4],name='logits')  
@@ -151,7 +155,7 @@ def inference(volumes,batch_size,is_training):
     return logits
 
 
-def loss(logits, labels):
+def loss(logits, labels, is_training):
     """
     compute cross entropy loss and l2 loss of all weight decay vars
     Inputs:
@@ -162,7 +166,12 @@ def loss(logits, labels):
     """
     cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits, name='cross_entropy_per_example')
     cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
-    tf.add_to_collection('losses', cross_entropy_mean)
+    if is_training == True:
+        tf.add_to_collection('losses', cross_entropy_mean)
+        return tf.add_n(tf.get_collection('losses'), name='total_loss')
+    else:
+        tf.add_to_collection('val_losses', cross_entropy_mean)
+        return tf.add_n(tf.get_collection('val_losses'), name='val_loss_total')
 
-    return tf.add_n(tf.get_collection('losses'), name='total_loss')
+    
 

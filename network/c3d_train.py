@@ -22,8 +22,6 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 import c3d
-sys.path.insert(0,'/home/alyb/ConvNetDiagnosis/processing')
-import visualize
 import random
 import math
 import pickle
@@ -32,7 +30,7 @@ TRAIN_DIR = '/home/alyb/ConvNetDiagnosis/network/checkpoints/'
 MAX_STEPS = 250000
 NUM_GPUS = 2
 GPUS = ['/gpu:2','/gpu:3']
-BATCH_SIZE = 100
+BATCH_SIZE = 200
 DATA_DIR = '/home/alyb/data/tfrecords/'
 VOL_SHAPE = [32,32,32]
 TOT_EXAMPLES = 360000
@@ -100,16 +98,22 @@ def tower_loss(scope,volumes,labels,is_training):
     # build inference graph
     logits = c3d.inference(volumes,BATCH_SIZE,is_training) 
     
-    # build loss section of graph and assemble total loss for current tower
-    _ = c3d.loss(logits,labels) # return value would be significant in single gpu training
     
-    losses = tf.get_collection('losses',scope)
-    total_loss = tf.add_n(losses, name='total_loss')
+    # build loss section of graph and assemble total loss for current tower
+    _ = c3d.loss(logits,labels,is_training) # return value would be significant in single gpu training
+    
+    if is_training == True:
+        losses = tf.get_collection('losses',scope)
+        total_loss = tf.add_n(losses, name='total_loss')
+    else:
+        losses = tf.get_collection('val_losses',scope)
+        total_loss = tf.add_n(losses, name='val_losses_total')
+
     all_losses = losses + [total_loss]
     #attach a summary to individual losses and total loss
     for l in all_losses:
         tf.summary.scalar(l.op.name, l)
-
+        
     return total_loss,logits
        
 def tower_accuracy(labels,logits):
@@ -184,7 +188,7 @@ def train(train_files,val_files,load_check = False):
         # validate with one gpu
         with tf.variable_scope(tf.get_variable_scope()): 
             with tf.device(GPUS[0]):
-                with tf.name_scope('%s_%d_%s' % ('tower', 0,'val')) as scope: 
+                with tf.name_scope('%s' % ('val')) as scope: 
                     tf.get_variable_scope().reuse_variables()
                     val_batch, val_labels = iterator_val.get_next()
                     val_loss,val_logits = tower_loss(scope, val_batch, val_labels, is_training)
