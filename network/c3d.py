@@ -85,7 +85,7 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[3,3,3,1,64],0.0005,is_training)
         biases = variable_on_cpu('biases', [64], tf.constant_initializer(0.0))
         pre_activation = conv3d(downsampled, kernel,1,1,1) + biases
-        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv1 = tf.nn.leaky_relu(pre_activation,name='conv1')
         activation_summary(conv1)
     pool1 = max_pool3d(conv1,1,2,2,name='pool1')
@@ -95,7 +95,7 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[3,3,3,64,128],0.0005,is_training)
         biases = variable_on_cpu('biases', [128], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool1, kernel,1,1,1) + biases
-        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv2 = tf.nn.leaky_relu(pre_activation,name='conv2')
         activation_summary(conv2)
     pool2 = max_pool3d(conv2,2,2,2,name='pool2')
@@ -105,7 +105,7 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[3,3,3,128,256],0.0005,is_training)
         biases = variable_on_cpu('biases', [256], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool2, kernel,1,1,1) + biases
-        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv3a = tf.nn.leaky_relu(pre_activation,name='conv3a')
         activation_summary(conv3a)
 
@@ -113,7 +113,7 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[3,3,3,256,256],0.0005,is_training)
         biases = variable_on_cpu('biases', [256], tf.constant_initializer(0.0))
         pre_activation = conv3d(conv3a, kernel,1,1,1) + biases
-        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv3b = tf.nn.leaky_relu(pre_activation,name='conv3b')
         activation_summary(conv3b) 
     pool3 = max_pool3d(conv3b,2,2,2,name='pool3')
@@ -123,7 +123,7 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[3,3,3,256,512],0.0005,is_training)
         biases = variable_on_cpu('biases', [512], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool3, kernel,1,1,1) + biases
-        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv4a = tf.nn.leaky_relu(pre_activation,name='conv4a')
         activation_summary(conv4a)
 
@@ -131,7 +131,7 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[3,3,3,512,512],0.0005,is_training)
         biases = variable_on_cpu('biases', [512], tf.constant_initializer(0.0))
         pre_activation = conv3d(conv4a, kernel,1,1,1) + biases
-        #pre_activation = tf.contrib.layers.batch_norm(pre_activation,is_training=is_training)
+        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv4b = tf.nn.leaky_relu(pre_activation,name='conv4b')
         activation_summary(conv4b) 
     pool4 = max_pool3d(conv4b,2,2,2,name='pool4')

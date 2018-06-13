@@ -5,13 +5,19 @@ import sys
 import os
 import extract
 import scipy.ndimage
-sys.path.insert(0,'/home/alyb/ConvNetDiagnosis/network')
-import dataset
+#sys.path.insert(0,'/home/alyb/ConvNetDiagnosis/network')
+#import dataset
+import random
 
 LUNA_DIR = "/home/alyb/data/luna16/" 
 SUBVOL_DIM = np.array([32,32,32]) # extracted sub volumes will have these dimensions (z,y,x)
 SPACINGS_POS = [[1.5,0.5,0.5],[1.375,0.625,0.625],[1.25,0.75,0.75]] #augmentation for positive labels - extract sub volumes at various scales
 SPACINGS_NEG = [[1.25,0.75,0.75]]
+POS_PATH = '/home/alyb/data/pickles/nodules.p'
+FALSE_POS_PATH = '/home/alyb/data/pickles/false_pos.p'
+RANDOM_PATH = '/home/alyb/data/pickles/random.p'
+TFR_DIR = '/home/alyb/data/tfrecords/'
+VOL_PATH = '/home/alyb/data/pickles/volumes.p'
 
 def worldToVox(centroids_world,spacing,scanOrigin):
     '''
@@ -103,9 +109,9 @@ def getRandom(vol_dim,cen_vox,vox_size,spacing,new_spacing,quantity):
                 break
     return cen_rand
     
-def loadLUNA(pos,path):
+def loadLUNASub(patients,series_uids,is_pos,save_path):
     count = 0
-    if pos==1:
+    if is_pos:
         sample_spacings = SPACINGS_POS
         translate = 19
         candidates = extract.getNodules()
@@ -113,94 +119,130 @@ def loadLUNA(pos,path):
         sample_spacings = SPACINGS_NEG
         translate = 0
         candidates = extract.getCandidates()
-    with open(path,"wb") as openfile:
-        subsets = os.listdir(LUNA_DIR)
-        for subset in subsets:
-            patients = os.listdir(LUNA_DIR + subset + "/")
-            for patient in patients:
-                try: 
-                    if patient[-4:] == ".mhd": 
-                        series_uid = patient[:-4]
-                        if series_uid in candidates:
-                            image,origin,spacing = extract.load_itk_image(LUNA_DIR + subset + "/" + patient)    
-                            patient_pixels = extract.getPixels(0,image,0)
-                            centroids_world = candidates[series_uid]
-                            centroids_vox = worldToVox(centroids_world,spacing,origin)
-                            for centroid in centroids_vox:
-                                for new_spacing in sample_spacings:    
-                                    try:    
-                                        sub_vols,patches = extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)
-                                        count = count+len(sub_vols)                            
-                                        pickle.dump([sub_vols,patches,series_uid,new_spacing],openfile)
-                                    except AssertionError:
-                                        print("sub volume extraction error: most likely due to out of range index")
-                                    except KeyboardInterrupt:
-                                        print("Interrupted")
-                                        sys.exit()
-                                    except:
-                                        print("unknown error with candidate sub volume")
-                            print(str(count) + " sub volumes saved")
-                        else:
-                            print("Patient: " + series_uid + " not in candidates")
-                except KeyboardInterrupt:
-                    print("Interrupted")
-                    sys.exit()                    
-                except:
-                    print("unkown error with patient: " + patient)
+    with open(save_path,"wb") as openfile:
+        for index,patient in enumerate(patients):
+            series_uid = series_uids[index]
+            try: 
+                if series_uid in candidates:
+                    image,origin,spacing = extract.load_itk_image(patient)    
+                    patient_pixels = extract.getPixels(0,image,0)
+                    centroids_world = candidates[series_uid]
+                    centroids_vox = worldToVox(centroids_world,spacing,origin)
+                    for centroid in centroids_vox:
+                        for new_spacing in sample_spacings:    
+                            try:    
+                                sub_vols,patches = extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)
+                                count = count+len(sub_vols)                            
+                                pickle.dump([sub_vols,patches,series_uid,new_spacing],openfile)
+                            except AssertionError:
+                                print("sub volume extraction error: most likely due to out of range index")
+                            except KeyboardInterrupt:
+                                print("Interrupted")
+                                sys.exit()
+                            except:
+                                print("unknown error with candidate sub volume")
+                    print(str(count) + " sub volumes saved")
+                else:
+                    print("Patient: " + series_uid + " not in candidates")
+            except KeyboardInterrupt:
+                print("Interrupted")
+                sys.exit()                    
+            except:
+                print("unkown error with patient: " + patient)
                                         
-def loadRandom(path):
+def loadRandomSub(patients,series_uids,save_path):
     count = 0
     sample_spacings = SPACINGS_NEG
     candidates = extract.getNodules()
     translate = 0
-    with open(path,"wb") as openfile:
-        subsets = os.listdir(LUNA_DIR)
-        for subset in subsets:
-            patients = os.listdir(LUNA_DIR + subset + "/")
-            for patient in patients:
-                try:
-                    if patient[-4:] == ".mhd":
-                        series_uid = patient[:-4]
-                        if series_uid in candidates:
-                            image,origin,spacing = extract.load_itk_image(LUNA_DIR + subset + "/" + patient)
-                            patient_pixels = extract.getPixels(0,image,0)
-                            centroids_world = candidates[series_uid]
-                            centroids_vox = worldToVox(centroids_world,spacing,origin)
-                            for new_spacing in sample_spacings:
-                                try:
-                                    vol_dim = np.array(np.shape(patient_pixels))
-                                    centroids_rand = getRandom(vol_dim,centroids_vox,SUBVOL_DIM,spacing,new_spacing,25)
-                                    for centroid in centroids_rand:
-                                        sub_vols,patches = extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)    
-                                        count = count+len(sub_vols)
-                                        pickle.dump([sub_vols,patches,series_uid,new_spacing],openfile)
-                                except AssertionError:
-                                    print("sub volume extraction error: most likely due to out of range index")
-                                except KeyboardInterrupt:
-                                    print("Interrupted")
-                                    sys.exit()
-                                except:
-                                    print("unknown error with candidate sub volume")
-                            print(str(count) + " sub volumes saved")
-                        else:
-                            print("Patient: " + series_uid + " not in candidates")
-                except KeyboardInterrupt:
-                    print("Interrupted")
-                    sys.exit()
-                except:
-                    print("unkown error with patient: " + patient)
+    with open(save_path,"wb") as openfile:
+        for index,patient in enumerate(patients):
+            series_uid = series_uids[index]
+            try:
+                if series_uid in candidates:
+                    image,origin,spacing = extract.load_itk_image(patient)
+                    patient_pixels = extract.getPixels(0,image,0)
+                    centroids_world = candidates[series_uid]
+                    centroids_vox = worldToVox(centroids_world,spacing,origin)
+                    for new_spacing in sample_spacings:
+                        try:
+                            vol_dim = np.array(np.shape(patient_pixels))
+                            centroids_rand = getRandom(vol_dim,centroids_vox,SUBVOL_DIM,spacing,new_spacing,25)
+                            for centroid in centroids_rand:
+                                sub_vols,patches = extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)    
+                                count = count+len(sub_vols)
+                                pickle.dump([sub_vols,patches,series_uid,new_spacing],openfile)
+                        except AssertionError:
+                            print("sub volume extraction error: most likely due to out of range index")
+                        except KeyboardInterrupt:
+                            print("Interrupted")
+                            sys.exit()
+                        except:
+                            print("unknown error with candidate sub volume")
+                    print(str(count) + " sub volumes saved")
+                else:
+                    print("Patient: " + series_uid + " not in candidates")
+            except KeyboardInterrupt:
+                print("Interrupted")
+                sys.exit()
+            except:
+                print("unkown error with patient: " + patient)
 
-
-
+def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negatives):
+    ''' 
+    load a few full volumes to test the first stage of the pipeline
+    save a list of volumes and the locations of the nodules in each
+    Inputs:
+        save_path: path to save the pickled volumes
+        luna_dir: directory containing the luna files
+    '''
+    candidates = extract.getNodules()
+    with open(save_path,"wb") as openfile:
+        indices = np.array(range(0,len(patients)))
+        np.random.shuffle(indices)
+        indices = indices.tolist() 
+        pos_count = 0
+        neg_count = 0
+        patient_count = 0
+        while pos_count < desired_positives or neg_count < desired_negatives:
+            try:                  
+                patient = patients[indices[patient_count]]   
+                series_uid = series_uids[indices[patient_count]]  
+                image,origin,spacing = extract.load_itk_image(patient)  
+                patient_pixels = extract.getPixels(0,image,0) 
+                if series_uid in candidates and pos_count<desired_positives:         
+                    centroids_world = candidates[series_uid]
+                    centroids_vox = worldToVox(centroids_world,spacing,origin)
+                    pickle.dump([patient_pixels,centroids_vox],openfile)
+                    pos_count += 1
+                elif series_uid not in candidates and neg_count<desired_negatives:
+                    pickle.dump([patient_pixels,None],openfile)
+                    neg_count += 1  
+                patient_count += 1    
+                print("positive count: %d, negative count: %d" %(pos_count,neg_count))  
+            except IndexError:
+                print("Iteration complete")
+                sys.exit()
+            except KeyboardInterrupt:
+                print("Interrupted")
+                sys.exit()
+            except:
+                print("error extracting patient: %s" %(series_uid))    
+                    
 def main():
-    pos_path = '/home/alyb/data/pickles/nodules.p'
-    #loadLUNA(1,pos_path)
-    falsepos_path = '/home/alyb/data/pickles/false_pos.p'
-    #loadLUNA(0,falsepos_path)
-    random_path = '/home/alyb/data/pickles/random.p'
-    #loadRandom(random_path)
-    save_dir = '/home/alyb/data/tfrecords/'
-    dataset.createDataset(pos_path,falsepos_path,random_path,save_dir)
+    subsets = os.listdir(LUNA_DIR)
+    patients = []
+    series_uids = []
+    for subset in subsets:
+        subset_path = os.path.join(LUNA_DIR,subset)
+        subset_files = [x for x in os.listdir(subset_path) if x[-4:] == ".mhd"]   
+        subset_series_uids = [x[:-4] for x in subset_files]   
+        subset_patients = [os.path.join(subset_path,x) for x in subset_files]
+        patients.extend(subset_patients)
+        series_uids.extend(subset_series_uids)
+    assert len(patients) == len(series_uids), "patients list and series uid list have different lengths!" 
+    loadLunaVol(patients,series_uids,VOL_PATH,desired_positives = 100, desired_negatives = 100)
+    
 
 if __name__ == "__main__":
     main()

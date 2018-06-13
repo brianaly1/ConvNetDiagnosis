@@ -1,7 +1,7 @@
 import pickle
 from matplotlib import pyplot as plt
 
-VAL_FILE = "/home/alyb/trained_models/val/validation.p"
+VAL_FILE = "/home/alyb/ConvNetDiagnosis/network/val/validation.p"
 
 def plot_graph(path):
     with open(path,'rb') as openfile:

@@ -145,7 +145,7 @@ def train(train_files,val_files,load_check = False):
         global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),   
                                        trainable=False)
         # create adam optimizer
-        opt = tf.train.AdamOptimizer(c3d.LEARNING_RATE)
+        opt = tf.train.AdamOptimizer(c3d.LEARNING_RATE, epsilon = 1e-05)
         
         # inputs from pipeline
         filenames = tf.placeholder(tf.string, shape=[None])
