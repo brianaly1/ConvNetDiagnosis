@@ -19,67 +19,6 @@ RANDOM_PATH = '/home/alyb/data/pickles/random.p'
 TFR_DIR = '/home/alyb/data/tfrecords/'
 VOL_PATH = '/home/alyb/data/pickles/volumes.p'
 
-def worldToVox(centroids_world,spacing,scanOrigin):
-    '''
-    convert centroids from world frame (extracted from csv files, into voxel frame
-    Inputs: 
-        centroids_world : list of centroids in world coordinates 
-        spacing: list of voxel spacings in mm 
-        scanOrigin: location of voxel frame origin wrt world frame
-    Outputs:
-        centroids_vox: list of centroids in voxel coordinates
-    note: the following only works if the voxel frame is not rotated with respect to the world frame - which is the case
-    for all the data used
-    '''
-    centroids_world = np.array(centroids_world).astype(float)
-    origin = np.array(scanOrigin).astype(float)
-    scaled_vox = np.absolute(centroids_world - origin) #broadcast
-    centroids_vox = scaled_vox / spacing.reshape((1,3))
-    centroids_vox = centroids_vox.astype(int)
-    return centroids_vox.tolist()	
-
-def extractCandidate(volume,cen_vox,vox_size,spacing,new_spacing,translate): 
-    '''
-    given a centroid location in the volume, calculate the sub volume shape (old_shape) that would result
-    in the desired sub volume shape after resampling at a new spacing
-    Inputs: 
-        volume: scan volume
-        cen_vox: centroid in voxel coordinates
-        spacing: list of original scan voxel spacings
-        new_spacing: list of desired voxel spacings
-        translations: list of translations for augmentation
-    Outputs: 
-        sub_vols: list of extracted sub volumes, 
-        patches : 2d plane centered at centroid, used for visualization
-    '''
-    sub_vols = []
-    patches = []
-    resize_factor = spacing/new_spacing
-    old_shape = np.round(vox_size/resize_factor)
-    resize_factor = vox_size/old_shape
-    new_spacing = spacing/resize_factor
-    top_left = (cen_vox - old_shape/2).astype(int) 
-    bot_right = (cen_vox + old_shape/2).astype(int) 
-    sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
-    sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
-    assert np.shape(sub_volume) == (32,32,32) # using this as a lazy way to reject extracted sub volumes that dont fall within the original volume's bounds
-    patch = sub_volume[int(vox_size[0]/2),:,:]
-    sub_vols.append(sub_volume)
-    patches.append(patch)
-    if translate!=0:
-        translations = np.random.randint(-SUBVOL_DIM[0]/4,high=SUBVOL_DIM[0]/4,size=(translate,1,3)) 
-        for translation in translations:
-            trans_np = np.squeeze(translation)
-            top_left = (cen_vox - old_shape/2).astype(int) + trans_np
-            bot_right = (cen_vox + old_shape/2).astype(int) + trans_np
-            sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
-            sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
-            assert np.shape(sub_volume) == (32,32,32) # using this as a lazy way to reject extracted sub volumes that dont fall within the original volume's bounds
-            patch = sub_volume[int(vox_size[0]/2-trans_np[0]),:,:]
-            sub_vols.append(sub_volume)
-            patches.append(patch)
-    return sub_vols, patches
-
 def getRandom(vol_dim,cen_vox,vox_size,spacing,new_spacing,quantity):
     '''
     compute a list of random coordinates to extract negative sub volumes centered at the coordinates
@@ -109,16 +48,23 @@ def getRandom(vol_dim,cen_vox,vox_size,spacing,new_spacing,quantity):
                 break
     return cen_rand
     
-def loadLUNASub(patients,series_uids,is_pos,save_path):
+def loadLUNASub(patients,series_uids,mode,save_path,csv_path):
     count = 0
-    if is_pos:
+    
+    # mode 0 loads positive nodules, 1 false positives, 2 random non-nodules
+    if mode==0:
         sample_spacings = SPACINGS_POS
         translate = 19
-        candidates = extract.getNodules()
-    else:
+        candidates = extract.getCandidates(is_pos=1,file_path=csv_path)
+    elif mode==1:
         sample_spacings = SPACINGS_NEG
         translate = 0
-        candidates = extract.getCandidates()
+        candidates = extract.getCandidates(is_pos=0,file_path=csv_path)
+    elif mode==2:
+        sample_spacings = SPACINGS_NEG
+        translate = 0
+        candidates = extract.Candidates(is_pos=1,file_path=csv_path)
+
     with open(save_path,"wb") as openfile:
         for index,patient in enumerate(patients):
             series_uid = series_uids[index]
@@ -127,11 +73,18 @@ def loadLUNASub(patients,series_uids,is_pos,save_path):
                     image,origin,spacing = extract.load_itk_image(patient)    
                     patient_pixels = extract.getPixels(0,image,0)
                     centroids_world = candidates[series_uid]
-                    centroids_vox = worldToVox(centroids_world,spacing,origin)
-                    for centroid in centroids_vox:
-                        for new_spacing in sample_spacings:    
+                    centroids_vox = extract.worldToVox(centroids_world,spacing,origin)
+                    centroids = centroids_vox
+                    for new_spacing in sample_spacings:  
+
+                        if mode==2:
+                            vol_dim = np.array(np.shape(patient_pixels))
+                            centroids_rand = getRandom(vol_dim,centroids_vox,SUBVOL_DIM,spacing,new_spacing,25)  
+                            centroids = centroids_rand   
+                   
+                        for centroid in centroids:  
                             try:    
-                                sub_vols,patches = extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)
+                                sub_vols,patches = extract.extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)
                                 count = count+len(sub_vols)                            
                                 pickle.dump([sub_vols,patches,series_uid,new_spacing],openfile)
                             except AssertionError:
@@ -141,6 +94,7 @@ def loadLUNASub(patients,series_uids,is_pos,save_path):
                                 sys.exit()
                             except:
                                 print("unknown error with candidate sub volume")
+
                     print(str(count) + " sub volumes saved")
                 else:
                     print("Patient: " + series_uid + " not in candidates")
@@ -150,44 +104,6 @@ def loadLUNASub(patients,series_uids,is_pos,save_path):
             except:
                 print("unkown error with patient: " + patient)
                                         
-def loadRandomSub(patients,series_uids,save_path):
-    count = 0
-    sample_spacings = SPACINGS_NEG
-    candidates = extract.getNodules()
-    translate = 0
-    with open(save_path,"wb") as openfile:
-        for index,patient in enumerate(patients):
-            series_uid = series_uids[index]
-            try:
-                if series_uid in candidates:
-                    image,origin,spacing = extract.load_itk_image(patient)
-                    patient_pixels = extract.getPixels(0,image,0)
-                    centroids_world = candidates[series_uid]
-                    centroids_vox = worldToVox(centroids_world,spacing,origin)
-                    for new_spacing in sample_spacings:
-                        try:
-                            vol_dim = np.array(np.shape(patient_pixels))
-                            centroids_rand = getRandom(vol_dim,centroids_vox,SUBVOL_DIM,spacing,new_spacing,25)
-                            for centroid in centroids_rand:
-                                sub_vols,patches = extractCandidate(patient_pixels,centroid,SUBVOL_DIM,spacing,new_spacing,translate)    
-                                count = count+len(sub_vols)
-                                pickle.dump([sub_vols,patches,series_uid,new_spacing],openfile)
-                        except AssertionError:
-                            print("sub volume extraction error: most likely due to out of range index")
-                        except KeyboardInterrupt:
-                            print("Interrupted")
-                            sys.exit()
-                        except:
-                            print("unknown error with candidate sub volume")
-                    print(str(count) + " sub volumes saved")
-                else:
-                    print("Patient: " + series_uid + " not in candidates")
-            except KeyboardInterrupt:
-                print("Interrupted")
-                sys.exit()
-            except:
-                print("unkown error with patient: " + patient)
-
 def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negatives):
     ''' 
     load a few full volumes to test the first stage of the pipeline
@@ -212,7 +128,7 @@ def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negativ
                 patient_pixels = extract.getPixels(0,image,0) 
                 if series_uid in candidates and pos_count<desired_positives:         
                     centroids_world = candidates[series_uid]
-                    centroids_vox = worldToVox(centroids_world,spacing,origin)
+                    centroids_vox = extract.worldToVox(centroids_world,spacing,origin)
                     pickle.dump([patient_pixels,centroids_vox],openfile)
                     pos_count += 1
                 elif series_uid not in candidates and neg_count<desired_negatives:

@@ -5,6 +5,7 @@ import pickle
 import sys
 
 DATA_DIR = '/home/alyb/data/luna16/'
+VOLUMES_FILE = '/home/alyb/data/pickles/volumes.p'
 
 def _int64_feature(value):
   return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
@@ -20,7 +21,6 @@ def _shuffle(X,Y):
 def saveTf(volumes,labels,file_name):
     '''
     Save TFRecord files with data and labels
-    
     Inputs:
         volumes: np array of voxels size [num_examples, height, rows, columns]
         labels:  np array of binary labels of size [num_examples]
@@ -40,14 +40,42 @@ def saveTf(volumes,labels,file_name):
                                                                              }))
             writer.write(example.SerializeToString())
 
-def createDataset(pos_path,falsepos_path,random_path,save_dir):
+def create_dataset_test(volumes_path,save_dir):
+    '''
+    Segment volumes into sub volumes
+    save subvols for each vol in a seperate tfrecords file
+    Inputs:
+        volumes_path: path to pickle file containing volumes - [pixels,centroid_list]
+        save_dir: path to directory to save tfrecord files in
+    '''
+    with open(volumes_path,"rb") as openfile:
+        while True:
+            volume = pickle.load(openfile)
+            pixels = volume[0]
+            centroids = volume[1]
+            subvolumes,labels = segment_vol(pixels,centroids)
+            sys.exit()
+                    
+       
+
+
+
+
+
+
+
+
+
+
+
+def create_dataset(pos_path,falsepos_path,random_path,save_dir):
     '''
     Load data from the serialized files and chunk into mini batches
     mini batches will be passed to creatDataset() to be saved as TFRecord files
     which will be loaded as tensorflow dataset objects when training
     
     Inputs:
-        pos_path: path to file with serialized positive sub volumes
+        pos_path: path to file with serialized positive sub volumes 
         falsepos_path: path to file with serialized false positives
         random_path: path to file with randomly extracted sub volumes
         save_dir: path to save directory

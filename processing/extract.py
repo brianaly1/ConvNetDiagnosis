@@ -11,61 +11,54 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import SimpleITK as sitk
 import csv
 import cv2
+import math
 
-
-NOD_FILE = "/home/alyb/data/CSVFILES/annotations.csv" #csv file with centroids of nodules
-FALSE_FILE = "/home/alyb/data/CSVFILES/candidates_V2.csv" #csv file with centroids of false positive
-
-def getNodules():
+def worldToVox(centroids_world,spacing,scanOrigin):
     '''
-    extract nodule locations from CSV file
-    Output: dictionary with series UID of a scan as keys and a list of nodule centroids as values
+    convert centroids from world frame (extracted from csv files, into voxel frame
+    Inputs: 
+        centroids_world : list of centroids in world coordinates 
+        spacing: list of voxel spacings in mm 
+        scanOrigin: location of voxel frame origin wrt world frame
+    Outputs:
+        centroids_vox: list of centroids in voxel coordinates
+    note: the following only works if the voxel frame is not rotated with respect to the world frame - which is the case
+    for all the data used
     '''
-    nodules = {}
-    count = 0
-    with open(NOD_FILE, newline='') as csvfile:
-        annotations = csv.reader(csvfile, delimiter=',', quotechar='|')
-        for row in annotations:
-            series_uid = row[0]
-            x = row[1]
-            y = row[2]
-            z = row[3]
-            centroid = [z,y,x]
-            if series_uid in nodules:
-                nodules[series_uid].append(np.array(centroid))
-                count = count+1
-            else:
-                nodules[series_uid] = [np.array(centroid)]
-                count = count+1
-    print(str(count) + " relevant nodules in csv file")
-    return nodules
+    centroids_world = np.array(centroids_world).astype(float)
+    origin = np.array(scanOrigin).astype(float)
+    scaled_vox = np.absolute(centroids_world - origin) #broadcast
+    centroids_vox = scaled_vox / spacing.reshape((1,3))
+    centroids_vox = centroids_vox.astype(int)
+    return centroids_vox.tolist()	
 
-def getCandidates():
+def getCandidates(is_pos,file_path):
     '''
-    extract false positive locations from CSV file
+    extract candidate locations from CSV file
     Output: dictionary with series UID of a scan as keys and a list of nodule centroids as values
     '''
     candidates = {}
-    count = 0
-    with open(FALSE_FILE, newline='') as csvfile:
+    count = 0 
+    max_count = math.inf
+    if not is_pos:
+        max_count = 400    
+    with open(file_path, newline='') as csvfile:
         annotations = csv.reader(csvfile, delimiter=',', quotechar='|')
         for row in annotations:
             series_uid = row[0]
             x = row[1]
             y = row[2]
             z = row[3]
-            label = row[4]
             centroid = [z,y,x]
-            if int(label)==0:
-                if series_uid in candidates: 
-                    if len(candidates[series_uid]) < 400:
-                        candidates[series_uid].append(np.array(centroid))
-                        count = count + 1
-                else:
-                    candidates[series_uid] = [np.array(centroid)]
-                    count = count + 1
-    print(str(count) + " relevant candidates in csv file")
-    return candidates
+            if series_uid in candidates:
+                if len(candidates[series_uid]) < max_count:
+                    candidates[series_uid].append(np.array(centroid))
+                    count = count+1
+            else:
+                candidates[series_uid] = [np.array(centroid)]
+                count = count+1
+    print(str(count) + " relevant nodules in csv file")
+    return nodules
 
 def load_itk_image(filename):
     '''
@@ -87,7 +80,7 @@ def loadScan(path):
     outputs: list of slices in a scan volume
     '''
     
-    slices = [pydicom.read_file(path + '/' + s) for s in os.listdir(path)]
+    slices = [pydicom.read_file(os.path.join(path,s)) for s in os.listdir(path)]
     slices.sort(key = lambda x: float(x.ImagePositionPatient[2])) 
     try:
         slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
@@ -99,7 +92,7 @@ def loadScan(path):
         
     return slices
 
-def getPixels(slices,image,dicom=1):
+def getPixels(slices,image,dicom=0):
     '''
     convert voxel values to Housenfeild units
     normalize and threshold 
@@ -122,89 +115,59 @@ def getPixels(slices,image,dicom=1):
             
             raw_image[slice_number] += np.int16(intercept)
     
-        raw_image = np.array(image)
+        raw_image = np.array(raw_image)
+        image=raw_image
+    
 
-        maxHU = 400
-        minHU = -1000
-        raw_image = (raw_image - minHU)/(maxHU - minHU)
-        raw_image[image>1] = 1
-        raw_image[image<0] = 0
-        return raw_image
-    else:
-        maxHU = 400
-        minHU = -1000
-        image = (image - minHU)/(maxHU - minHU)
-        image[image>1] = 1
-        image[image<0] = 0
-        return image
+    maxHU = 400
+    minHU = -1000
+    image = (image - minHU)/(maxHU - minHU)
+    image[image>1] = 1
+    image[image<0] = 0
+    return image
 
-def resample(image, spacing, new_spacing):
+def extractCandidate(volume,cen_vox,vox_size,spacing,new_spacing,translate): 
     '''
-    resample an input volume at a different voxel spacing by interpolation
-    inputs: image (scan volume), spacing (old spacing), new_spacing
-    outputs: resampled image
+    given a centroid location in the volume, calculate the sub volume shape (old_shape) that would result
+    in the desired sub volume shape after resampling at a new spacing
+    Inputs: 
+        volume: scan volume
+        cen_vox: centroid in voxel coordinates
+        spacing: list of original scan voxel spacings
+        new_spacing: list of desired voxel spacings
+        translations: list of translations for augmentation
+    Outputs: 
+        sub_vols: list of extracted sub volumes, 
+        patches : 2d plane centered at centroid, used for visualization
     '''
-    spacing = [spacing[2],spacing[1],spacing[0]]
-    new_spacing = [new_spacing[2],new_spacing[1],new_spacing[0]]
-    # Resizing dim z
-    resize_x = 1.0
-    resize_y = float(spacing[2]) / float(new_spacing[2])
-    interpolation = cv2.INTER_LINEAR
-    resized = cv2.resize(image, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)  # opencv assumes [y,x,channels]
+    sub_vols = []
+    patches = []
+    resize_factor = spacing/new_spacing
+    old_shape = np.round(vox_size/resize_factor)
+    resize_factor = vox_size/old_shape
+    new_spacing = spacing/resize_factor
+    top_left = (cen_vox - old_shape/2).astype(int) 
+    bot_right = (cen_vox + old_shape/2).astype(int) 
+    sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
+    sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
+    assert np.shape(sub_volume) == (32,32,32) # using this as a lazy way to reject extracted sub volumes that dont fall within the original volume's bounds
+    patch = sub_volume[int(vox_size[0]/2),:,:]
+    sub_vols.append(sub_volume)
+    patches.append(patch)
+    if translate!=0:
+        translations = np.random.randint(-SUBVOL_DIM[0]/4,high=SUBVOL_DIM[0]/4,size=(translate,1,3)) 
+        for translation in translations:
+            trans_np = np.squeeze(translation)
+            top_left = (cen_vox - old_shape/2).astype(int) + trans_np
+            bot_right = (cen_vox + old_shape/2).astype(int) + trans_np
+            sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
+            sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
+            assert np.shape(sub_volume) == (32,32,32) # using this as a lazy way to reject extracted sub volumes that dont fall within the original volume's bounds
+            patch = sub_volume[int(vox_size[0]/2-trans_np[0]),:,:]
+            sub_vols.append(sub_volume)
+            patches.append(patch)
+    return sub_vols, patches
 
-    resized = resized.swapaxes(0, 2)
-    resized = resized.swapaxes(0, 1)
-    resize_x = float(spacing[1]) / float(new_spacing[1])
-    resize_y = float(spacing[0]) / float(new_spacing[0])
 
-    # cv2 can handle max 512 channels
-    if resized.shape[2] > 512:
-        resized = resized.swapaxes(0, 2)
-        res1 = np.array(resized[:256])
-        res2 = np.array(resized[256:])
-        res1 = res1.swapaxes(0, 2)
-        res2 = res2.swapaxes(0, 2)
-        res1 = cv2.resize(res1, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)
-        res2 = cv2.resize(res2, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)
-        res1 = res1.swapaxes(0, 2)
-        res2 = res2.swapaxes(0, 2)
-        resized = np.vstack([res1, res2])
-        resized = resized.swapaxes(0, 2)
-    else:
-        resized = cv2.resize(resized, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)
-
-    resized = resized.swapaxes(0, 2)
-    resized = resized.swapaxes(2, 1)
-
-    return resized
-
-def resize(image,new_shape):
-
-    resize_x = 1.0
-    interpolation = cv2.INTER_LINEAR
-    resized = cv2.resize(image, dsize=(new_shape[1], new_shape[0]), interpolation=interpolation)  # opencv assumes y, x, channels umpy array, so y = z pfff
-    resized = res.swapaxes(0, 2)
-    resized = res.swapaxes(0, 1)
-
-    # cv2 can handle max 512 channels..
-    if resized.shape[2] > 512:
-        resized = resized.swapaxes(0, 2)
-        res1 = resized[:256]
-        res2 = resized[256:]
-        res1 = res1.swapaxes(0, 2)
-        res2 = res2.swapaxes(0, 2)
-        res1 = cv2.resize(res1, dsize=(target_shape[2], target_shape[1]), interpolation=interpolation)
-        res2 = cv2.resize(res2, dsize=(target_shape[2], target_shape[1]), interpolation=interpolation)
-        res1 = res1.swapaxes(0, 2)
-        res2 = res2.swapaxes(0, 2)
-        resized = np.vstack([res1, res2])
-        resized = resized.swapaxes(0, 2)
-    else:
-        resized = cv2.resize(resized, dsize=(target_shape[2], target_shape[1]), interpolation=interpolation)
-
-    resized = resized.swapaxes(0, 2)
-    resized = resized.swapaxes(2, 1)
-
-    return resized
 
 
