@@ -58,7 +58,7 @@ def getCandidates(is_pos,file_path):
                 candidates[series_uid] = [np.array(centroid)]
                 count = count+1
     print(str(count) + " relevant nodules in csv file")
-    return nodules
+    return candidates
 
 def load_itk_image(filename):
     '''
@@ -168,6 +168,36 @@ def extractCandidate(volume,cen_vox,vox_size,spacing,new_spacing,translate):
             patches.append(patch)
     return sub_vols, patches
 
+def segmentVolume(vol_shape,centroids,sub_vol_shape):
+    '''
+    Segment a volume into sub volumes, and generate labels for each
+    Inputs:
+        vol_shape: size of the volume
+        centroids: locations of nodules in the volume
+    Outputs:
+        sub_vol_centroids: centroids of the individual sub volumes
+        labels: label of each centroid
+    '''
+    sub_vol_centroids = []
+    labels = []
+    k_step = sub_vol_shape[0]
+    i_step = sub_vol_shape[1]
+    j_step = sub_vol_shape[2]
+    limits = (vol_shape-sub_vol_shape/2).astype(int)
+    for k in range(0,limits[0],k_step):
+        for i in range(0,limits[1],i_step):
+            for j in range(0,limits[2],j_step):
+                centroid = sub_vol_shape/2 + [k,i,j]
+                label = 0
+                if centroids != None:
+                    for nodule in centroids:
+                        if np.all(np.absolute(centroid-nodule)<sub_vol_shape) == True:
+                            label = 1 
+                sub_vol_centroids.append(centroid)
+                labels.append(label)
+    return sub_vol_centroids, labels
+             
+    
 
 
 

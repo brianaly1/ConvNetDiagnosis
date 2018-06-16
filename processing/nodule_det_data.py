@@ -18,6 +18,7 @@ FALSE_POS_PATH = '/home/alyb/data/pickles/false_pos.p'
 RANDOM_PATH = '/home/alyb/data/pickles/random.p'
 TFR_DIR = '/home/alyb/data/tfrecords/'
 VOL_PATH = '/home/alyb/data/pickles/volumes.p'
+CSV_FILES = '/home/alyb/data/CSVFILES/annotations.csv'
 
 def getRandom(vol_dim,cen_vox,vox_size,spacing,new_spacing,quantity):
     '''
@@ -43,7 +44,7 @@ def getRandom(vol_dim,cen_vox,vox_size,spacing,new_spacing,quantity):
         cen = (np.random.rand(3) * vol_dim).astype(int)
         cen_rand.append(cen)
         for cen_pos in cen_vox:
-            if np.any(np.absolute(cen_pos-cen)<SUBVOL_DIM) == True or np.any((cen-old_shape/2) < 0) == True or np.any((cen+old_shape/2) > vol_dim) == True:
+            if np.all(np.absolute(cen_pos-cen)<SUBVOL_DIM) == True or np.any((cen-old_shape/2) < 0) == True or np.any((cen+old_shape/2) > vol_dim) == True:
                 cen_rand.pop()
                 break
     return cen_rand
@@ -104,7 +105,7 @@ def loadLUNASub(patients,series_uids,mode,save_path,csv_path):
             except:
                 print("unkown error with patient: " + patient)
                                         
-def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negatives):
+def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negatives,csv_path):
     ''' 
     load a few full volumes to test the first stage of the pipeline
     save a list of volumes and the locations of the nodules in each
@@ -112,7 +113,7 @@ def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negativ
         save_path: path to save the pickled volumes
         luna_dir: directory containing the luna files
     '''
-    candidates = extract.getNodules()
+    candidates = extract.getCandidates(1,csv_path)
     with open(save_path,"wb") as openfile:
         indices = np.array(range(0,len(patients)))
         np.random.shuffle(indices)
@@ -129,10 +130,10 @@ def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negativ
                 if series_uid in candidates and pos_count<desired_positives:         
                     centroids_world = candidates[series_uid]
                     centroids_vox = extract.worldToVox(centroids_world,spacing,origin)
-                    pickle.dump([patient_pixels,centroids_vox],openfile)
+                    pickle.dump([patient_pixels,centroids_vox,spacing],openfile)
                     pos_count += 1
                 elif series_uid not in candidates and neg_count<desired_negatives:
-                    pickle.dump([patient_pixels,None],openfile)
+                    pickle.dump([patient_pixels,None,spacing],openfile)
                     neg_count += 1  
                 patient_count += 1    
                 print("positive count: %d, negative count: %d" %(pos_count,neg_count))  
@@ -157,7 +158,7 @@ def main():
         patients.extend(subset_patients)
         series_uids.extend(subset_series_uids)
     assert len(patients) == len(series_uids), "patients list and series uid list have different lengths!" 
-    loadLunaVol(patients,series_uids,VOL_PATH,desired_positives = 100, desired_negatives = 100)
+    loadLunaVol(patients,series_uids,VOL_PATH,100,100,CSV_FILES)
     
 
 if __name__ == "__main__":

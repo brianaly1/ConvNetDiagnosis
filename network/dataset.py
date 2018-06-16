@@ -3,7 +3,8 @@ import numpy as np
 import os
 import pickle
 import sys
-
+sys.path.insert(0,'/home/alyb/ConvNetDiagnosis/processing')
+import extract
 DATA_DIR = '/home/alyb/data/luna16/'
 VOLUMES_FILE = '/home/alyb/data/pickles/volumes.p'
 
@@ -40,7 +41,7 @@ def saveTf(volumes,labels,file_name):
                                                                              }))
             writer.write(example.SerializeToString())
 
-def create_dataset_test(volumes_path,save_dir):
+def create_dataset_test(volumes_path,save_dir,sample_spacings):
     '''
     Segment volumes into sub volumes
     save subvols for each vol in a seperate tfrecords file
@@ -51,23 +52,19 @@ def create_dataset_test(volumes_path,save_dir):
     with open(volumes_path,"rb") as openfile:
         while True:
             volume = pickle.load(openfile)
+            all_sub_vols = []
             pixels = volume[0]
             centroids = volume[1]
-            subvolumes,labels = segment_vol(pixels,centroids)
-            sys.exit()
+            spacing = volume[2]
+            vol_shape = np.shape(pixels)
+            sub_vol_shape = np.array([32,32,32])
+            sub_vol_centroids,labels = extract.segmentVolume(vol_shape,centroids,sub_vol_shape)
+            for new_spacing in sample_spacings: 
+                sub_vols,patches = extract.extractCandidate(volume,sub_vol_centroids,sub_vol_shape,spacing,new_spacing,translate=0)
+                all_sub_vols.append(sub_vols)
+        print(len(all_sub_vols)) 
+        sys.exit()
                     
-       
-
-
-
-
-
-
-
-
-
-
-
 def create_dataset(pos_path,falsepos_path,random_path,save_dir):
     '''
     Load data from the serialized files and chunk into mini batches
@@ -147,5 +144,10 @@ def create_dataset(pos_path,falsepos_path,random_path,save_dir):
         print('--------')
 
 
+def main():
+    sample_spacings = [[1.5,0.5,0.5],[1.375,0.625,0.625],[1.25,0.75,0.75]]
+    create_dataset_test('/home/alyb/data/pickles/volumes.p','/home/alyb/data/tfrecords/tfrecords-test/',sample_spacings)
 
+if __name__=="__main__":
+    main()
 

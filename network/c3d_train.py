@@ -313,7 +313,7 @@ def main(argv=None):  # pylint: disable=unused-argument
     training_paths = list(map(lambda file: os.path.join(DATA_DIR,file),training_set))
     validation_set = data_files[360:370]
     validation_paths = list(map(lambda file: os.path.join(DATA_DIR,file),validation_set))
-    train(training_paths,validation_paths,False)
+    train(training_paths,validation_paths,True)
 
 
 if __name__ == '__main__':
