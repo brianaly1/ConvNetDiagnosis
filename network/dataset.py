@@ -65,59 +65,37 @@ def create_dataset_test(volumes_path,save_dir,sample_spacings):
         print(len(all_sub_vols)) 
         sys.exit()
                     
-def create_dataset(pos_path,falsepos_path,random_path,save_dir):
+def create_dataset(files,desired_counts,labels,save_dir):
     '''
     Load data from the serialized files and chunk into mini batches
     mini batches will be passed to creatDataset() to be saved as TFRecord files
     which will be loaded as tensorflow dataset objects when training
     
     Inputs:
-        pos_path: path to file with serialized positive sub volumes 
-        falsepos_path: path to file with serialized false positives
-        random_path: path to file with randomly extracted sub volumes
+        files: list of paths to files, all elements in a file have the same label
+        desired_counts: number of examples to be included from each file
+        labels: list of label for examples contained in each file
         save_dir: path to save directory
     '''
-    file1_pointer = 0
-    file2_pointer = 0
-    file3_pointer = 0
+    file_pointers = [0,0,0]
     name_count = 0
     while True:
         mini_batch = []
         labels = []
         try:
-            with open(pos_path,'rb') as openfile:
-                sub_vols = []
-                count = 0
-                openfile.seek(file1_pointer)
-                while count < 180:
-                    subvol_list = pickle.load(openfile)[0]
-                    sub_vols.extend(subvol_list)
-                    labels.extend([1]*len(subvol_list))
-                    count = count + len(subvol_list)
-                file1_pointer = openfile.tell()
-                mini_batch.extend(sub_vols) 
-            with open(falsepos_path,'rb') as openfile:
-                sub_vols = []
-                count = 0
-                openfile.seek(file2_pointer)
-                while count < 800:
-                    subvol_list = pickle.load(openfile)[0]
-                    sub_vols.extend(subvol_list)
-                    labels.extend([0]*len(subvol_list))
-                    count = count + len(subvol_list)
-                file2_pointer = openfile.tell()
-                mini_batch.extend(sub_vols)
-            with open(random_path,'rb') as openfile:
-                sub_vols = []
-                count = 0
-                openfile.seek(file3_pointer)
-                while count < 20:
-                    subvol_list = pickle.load(openfile)[0]
-                    sub_vols.extend(subvol_list)
-                    labels.extend([0]*len(subvol_list))
-                    count = count + len(subvol_list)
-                file3_pointer = openfile.tell()
-                mini_batch.extend(sub_vols)
+            for index,file_name in enumerate(files):
+                with open(file_name,'rb') as openfile:
+                    sub_vols = []
+                    count = 0
+                    openfile.seek(file_pointers[index])
+                    while count < desired_counts[index]:
+                        subvol_list = pickle.load(openfile)[0]
+                        sub_vols.extend(subvol_list)
+                        labels.extend([labels[index]]*len(subvol_list))
+                        count = count + len(subvol_list)
+                    file_pointers[index] = openfile.tell()
+                    mini_batch.extend(sub_vols) 
+
             mini_batch = np.array(mini_batch)
             labels = np.array(labels)
             mini_batch,labels = _shuffle(mini_batch,labels)
@@ -129,6 +107,7 @@ def create_dataset(pos_path,falsepos_path,random_path,save_dir):
 
             print('current data count is: %d' %(len(mini_batch)*name_count))
             print('current label count is: %d' %(len(labels)*name_count))
+
         except EOFError:
             print('done')
             sys.exit()
