@@ -230,9 +230,9 @@ def train(train_files,val_files,load_check = False):
         moving_avg = 0 
         total_val_accs = []
         total_val_loss = []
-        checkpoint_path = os.path.join(TRAIN_DIR, 'model.ckpt')
+        checkpoint_path = os.path.join(TRAIN_DIR,'model.ckpt')
         if load_check:
-            saver.restore(sess, checkpoint_path) 
+            saver.restore(sess, tf.train.latest_checkpoint(TRAIN_DIR)) 
         for step in xrange(MAX_STEPS):
             start_time = time.time()
             _, loss_value,acc_values,summary_str = sess.run([train_op, loss, tower_accs, summary_op],feed_dict={is_training:True})
@@ -305,9 +305,9 @@ def train(train_files,val_files,load_check = False):
                     pickle.dump({'accs':total_val_accs,'loss':total_val_loss},openfile) 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    if tf.gfile.Exists(TRAIN_DIR):
-        tf.gfile.DeleteRecursively(TRAIN_DIR)
-    tf.gfile.MakeDirs(TRAIN_DIR)
+    #if tf.gfile.Exists(TRAIN_DIR):
+    #    tf.gfile.DeleteRecursively(TRAIN_DIR)
+    #tf.gfile.MakeDirs(TRAIN_DIR)
     data_files = os.listdir(DATA_DIR)
     training_set = data_files[0:360]
     training_paths = list(map(lambda file: os.path.join(DATA_DIR,file),training_set))
