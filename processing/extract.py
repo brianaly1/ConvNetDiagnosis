@@ -163,9 +163,7 @@ def extractCandidate(volume,cen_vox,vox_size,spacing,new_spacing,translate):
             bot_right[i] -= delta
     sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
     if np.any(resize_factor != 1.0) == True:
-        print("resizing")
         sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
-        print(np.shape(sub_volume))
     assert np.shape(sub_volume) == (32,32,32) # to reject extracted sub volumes that dont fall within the original volume's bounds
 
     patch = sub_volume[int(vox_size[0]/2),:,:]
@@ -216,14 +214,13 @@ def segmentVolume(vol_shape, centroids, sub_vol_shape, spacing, new_spacing):
     j_step = int(old_shape[2])
 
     limits = (vol_shape-old_shape/2).astype(int)
-
     for k in range(k_step//2,limits[0],k_step):
         for i in range(i_step//2,limits[1],i_step):
             for j in range(j_step//2,limits[2],j_step):
                 centroid = [k,i,j]
                 centroid_np = np.array(centroid)
                 label = 0
-                if not centroids == False:
+                if centroids != None:
                     for nodule in centroids:
                         nodule_np = np.array(nodule)
                         if np.all(np.absolute(centroid_np-nodule_np)<old_shape) == True:
