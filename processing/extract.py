@@ -131,70 +131,106 @@ def extractCandidate(volume,cen_vox,vox_size,spacing,new_spacing,translate):
     given a centroid location in the volume, calculate the sub volume shape (old_shape) that would result
     in the desired sub volume shape after resampling at a new spacing
     Inputs: 
-        volume: scan volume
-        cen_vox: centroid in voxel coordinates
-        spacing: list of original scan voxel spacings
-        new_spacing: list of desired voxel spacings
-        translations: list of translations for augmentation
+        volume: scan volume - np array
+        cen_vox: centroid in voxel coordinates - np array
+        spacing: original scan voxel spacings - list
+        new_spacing: desired voxel spacings - list
+        translations: translations for augmentation - list
     Outputs: 
-        sub_vols: list of extracted sub volumes, 
-        patches : 2d plane centered at centroid, used for visualization
+        sub_vols: extracted sub volumes - list of np arrays 
+        patches : 2d plane centered at centroid, used for visualization - np array
     '''
+    
     sub_vols = []
     patches = []
+    
+    spacing = np.array(spacing)
+    new_spacing = np.array(new_spacing)
+    # extract sub volume with old_shape such that after new_spacing is applies, vox_size is obtained
     resize_factor = spacing/new_spacing
     old_shape = np.round(vox_size/resize_factor)
     resize_factor = vox_size/old_shape
     new_spacing = spacing/resize_factor
+    
+    # extract sub volume
     top_left = (cen_vox - old_shape/2).astype(int) 
     bot_right = (cen_vox + old_shape/2).astype(int) 
+    for i in range(3):
+        delta = (bot_right[i] - top_left[i]) - old_shape[i]
+        if delta<0:
+            bot_right[i] -= delta
+        elif delta>0:
+            bot_right[i] -= delta
     sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
-    sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
-    assert np.shape(sub_volume) == (32,32,32) # using this as a lazy way to reject extracted sub volumes that dont fall within the original volume's bounds
+    if np.any(resize_factor != 1.0) == True:
+        print("resizing")
+        sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
+        print(np.shape(sub_volume))
+    assert np.shape(sub_volume) == (32,32,32) # to reject extracted sub volumes that dont fall within the original volume's bounds
+
     patch = sub_volume[int(vox_size[0]/2),:,:]
+
     sub_vols.append(sub_volume)
     patches.append(patch)
+    
+    #augment with random translations 
     if translate!=0:
         translations = np.random.randint(-SUBVOL_DIM[0]/4,high=SUBVOL_DIM[0]/4,size=(translate,1,3)) 
         for translation in translations:
             trans_np = np.squeeze(translation)
-            top_left = (cen_vox - old_shape/2).astype(int) + trans_np
-            bot_right = (cen_vox + old_shape/2).astype(int) + trans_np
+            top_left = ((cen_vox - old_shape/2) + trans_np).astype(int)
+            bot_right = ((cen_vox + old_shape/2) + trans_np).astype(int)
+
             sub_volume = volume[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
             sub_volume = scipy.ndimage.interpolation.zoom(sub_volume, resize_factor, mode='nearest')
-            assert np.shape(sub_volume) == (32,32,32) # using this as a lazy way to reject extracted sub volumes that dont fall within the original volume's bounds
+            assert np.shape(sub_volume) == (32,32,32) 
+
             patch = sub_volume[int(vox_size[0]/2-trans_np[0]),:,:]
+
             sub_vols.append(sub_volume)
             patches.append(patch)
+
     return sub_vols, patches
 
-def segmentVolume(vol_shape,centroids,sub_vol_shape):
+def segmentVolume(vol_shape, centroids, sub_vol_shape, spacing, new_spacing):
     '''
     Segment a volume into sub volumes, and generate labels for each
     Inputs:
-        vol_shape: size of the volume
-        centroids: locations of nodules in the volume
+        vol_shape: size of the volume - np array
+        centroids: locations of nodules in the volume - list
+        sub_vol_shape: desired sub volume shape - np array
+        spacing: current voxel spacing - list
+        new_spacing: desired voxel spacing - list
     Outputs:
         sub_vol_centroids: centroids of the individual sub volumes
         labels: label of each centroid
     '''
+
     sub_vol_centroids = []
     labels = []
-    k_step = sub_vol_shape[0]
-    i_step = sub_vol_shape[1]
-    j_step = sub_vol_shape[2]
-    limits = (vol_shape-sub_vol_shape/2).astype(int)
-    for k in range(0,limits[0],k_step):
-        for i in range(0,limits[1],i_step):
-            for j in range(0,limits[2],j_step):
-                centroid = sub_vol_shape/2 + [k,i,j]
+
+    resize_factor = spacing/new_spacing
+    old_shape = np.round(sub_vol_shape/resize_factor)
+    k_step = int(old_shape[0])
+    i_step = int(old_shape[1])
+    j_step = int(old_shape[2])
+
+    limits = (vol_shape-old_shape/2).astype(int)
+
+    for k in range(k_step//2,limits[0],k_step):
+        for i in range(i_step//2,limits[1],i_step):
+            for j in range(j_step//2,limits[2],j_step):
+                centroid = [k,i,j]
+                centroid_np = np.array(centroid)
                 label = 0
-                if centroids != None:
+                if not centroids == False:
                     for nodule in centroids:
-                        if np.all(np.absolute(centroid-nodule)<sub_vol_shape) == True:
+                        nodule_np = np.array(nodule)
+                        if np.all(np.absolute(centroid_np-nodule_np)<old_shape) == True:
                             label = 1 
-                sub_vol_centroids.append(centroid)
+                sub_vol_centroids.append(centroid_np)
                 labels.append(label)
+    sub_vol_centroids = np.array(sub_vol_centroids)
     return sub_vol_centroids, labels
              
     

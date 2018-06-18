@@ -3,6 +3,7 @@ import numpy as np
 import os
 import pickle
 import sys
+import scipy.ndimage
 sys.path.insert(0,'/home/alyb/ConvNetDiagnosis/processing')
 import extract
 DATA_DIR = '/home/alyb/data/luna16/'
@@ -49,21 +50,24 @@ def create_dataset_test(volumes_path,save_dir,sample_spacings):
         volumes_path: path to pickle file containing volumes - [pixels,centroid_list]
         save_dir: path to directory to save tfrecord files in
     '''
+
+    sub_vol_shape = np.array([32,32,32])
+
     with open(volumes_path,"rb") as openfile:
+        all_sub_vols = []
         while True:
             volume = pickle.load(openfile)
-            all_sub_vols = []
             pixels = volume[0]
             centroids = volume[1]
             spacing = volume[2]
             vol_shape = np.shape(pixels)
-            sub_vol_shape = np.array([32,32,32])
-            sub_vol_centroids,labels = extract.segmentVolume(vol_shape,centroids,sub_vol_shape)
-            for new_spacing in sample_spacings: 
-                sub_vols,patches = extract.extractCandidate(volume,sub_vol_centroids,sub_vol_shape,spacing,new_spacing,translate=0)
-                all_sub_vols.append(sub_vols)
-        print(len(all_sub_vols)) 
-        sys.exit()
+            for new_spacing in sample_spacings:
+                sub_vol_centroids,labels = extract.segmentVolume(vol_shape, centroids, sub_vol_shape, spacing, new_spacing)
+                for centroid in sub_vol_centroids:
+                    sub_vols,_ = extract.extractCandidate(pixels, centroid, sub_vol_shape, spacing, new_spacing, translate=0)
+                    all_sub_vols.extend(sub_vols)
+                print(len(all_sub_vols)) 
+            sys.exit()
                     
 def create_dataset(files,desired_counts,labels,save_dir):
     '''

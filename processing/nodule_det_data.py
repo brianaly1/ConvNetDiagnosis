@@ -44,7 +44,7 @@ def getRandom(vol_dim,cen_vox,vox_size,spacing,new_spacing,quantity):
         cen = (np.random.rand(3) * vol_dim).astype(int)
         cen_rand.append(cen)
         for cen_pos in cen_vox:
-            if np.all(np.absolute(cen_pos-cen)<SUBVOL_DIM) == True or np.any((cen-old_shape/2) < 0) == True or np.any((cen+old_shape/2) > vol_dim) == True:
+            if np.all(np.absolute(cen_pos-cen)<vox_size) == True or np.any((cen-old_shape/2) < 0) == True or np.any((cen+old_shape/2) > vol_dim) == True:
                 cen_rand.pop()
                 break
     return cen_rand
@@ -76,10 +76,10 @@ def loadLUNASub(patients,series_uids,mode,save_path,csv_path):
                     centroids_world = candidates[series_uid]
                     centroids_vox = extract.worldToVox(centroids_world,spacing,origin)
                     centroids = centroids_vox
+                    vol_dim = np.array(np.shape(patient_pixels))
                     for new_spacing in sample_spacings:  
 
                         if mode==2:
-                            vol_dim = np.array(np.shape(patient_pixels))
                             centroids_rand = getRandom(vol_dim,centroids_vox,SUBVOL_DIM,spacing,new_spacing,25)  
                             centroids = centroids_rand   
                    
