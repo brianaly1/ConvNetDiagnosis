@@ -147,17 +147,7 @@ def loadLunaVol(patients,series_uids,save_path,desired_positives,desired_negativ
                 print("error extracting patient: %s" %(series_uid))    
                     
 def main():
-    subsets = os.listdir(LUNA_DIR)
-    patients = []
-    series_uids = []
-    for subset in subsets:
-        subset_path = os.path.join(LUNA_DIR,subset)
-        subset_files = [x for x in os.listdir(subset_path) if x[-4:] == ".mhd"]   
-        subset_series_uids = [x[:-4] for x in subset_files]   
-        subset_patients = [os.path.join(subset_path,x) for x in subset_files]
-        patients.extend(subset_patients)
-        series_uids.extend(subset_series_uids)
-    assert len(patients) == len(series_uids), "patients list and series uid list have different lengths!" 
+    patients,series_uids = utils.load_patients_list()
     loadLunaVol(patients,series_uids,VOL_PATH,100,100,CSV_FILES)
     
 

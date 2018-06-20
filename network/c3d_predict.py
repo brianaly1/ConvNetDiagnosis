@@ -7,8 +7,8 @@ import c3d
 NUM_GPUS = 1
 GPUS = ["/gpu:1"]
 BATCH_SIZE = 100
-CHECKPOINT = "/home/alyb/ConvNetDiagnosis/network/checkpoints/" 
-TF_DATA_DIR = "/home/alyb/data/tfrecords/"
+CHECKPOINT = '/home/alyb/ConvNetDiagnosis/network/checkpoints/'
+TF_DATA_DIR = "/home/alyb/Data/tfrecords/tfrecords-test/"
 VOL_SHAPE = [32,32,32]
 
 def _parse_function(example_proto):
@@ -63,6 +63,7 @@ def predict(sub_vols,files): #load graph...
         saver = tf.train.Saver()
         sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,log_device_placement=True))
         sess.run(iterator.initializer,feed_dict={filenames:files})
+        print(CHECKPOINT)
         saver.restore(sess, tf.train.latest_checkpoint(CHECKPOINT))   
 
         all_predictions = []
@@ -84,7 +85,7 @@ def predict(sub_vols,files): #load graph...
 
     return(all_predictions,all_labels)
 
-def test():
+def test(test_paths):
     predictions,labels = predict(None,test_paths)
     predictions = np.array(predictions,dtype=np.int32)
     labels = np.array(labels,dtype=np.int32)
@@ -95,23 +96,9 @@ def test():
     
 def main():
     tf_data_files = os.listdir(TF_DATA_DIR)  
-    tf_test_set = data_files[370:390]
-    tf_test_paths = list(map(lambda file: os.path.join(DATA_DIR,file),test_set))
-    
-    all_nodules = []
-    for scan in scans:
-        nodules = []
-        volume = ()
-        sub_vols = partition(volume)
-        predictions = predict(sub_vols)
-        for i,prediction in enumerate(predictions):
-            if prediction == 1:
-                nodules.append(sub_vols[i])
-        all_nodules.append(nodules)
-
-    for scan in all_nodules:
-         for nodule in scan:
-            visualize.visVol(nodule)
+    tf_test_set = tf_data_files[2:3]
+    tf_test_paths = list(map(lambda file: os.path.join(TF_DATA_DIR,file),tf_test_set))
+    test(tf_test_paths)
 
 if __name__=="__main__":
     main()    
