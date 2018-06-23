@@ -5,11 +5,11 @@ import glob
 import math
 import numpy
 import cv2
-from collections import defaultdict
 from skimage.segmentation import clear_border
 from skimage.measure import label, regionprops
 from skimage.morphology import disk, dilation, binary_erosion, binary_closing
 from skimage.filters import roberts, sobel
+from collections import defaultdict
 from scipy import ndimage as ndi
 import pandas
 
@@ -28,31 +28,25 @@ def load_patients_list():
         
     return patients
 
-def load_patient_images(patient_id, base_dir=None, wildcard="*.*", exclude_wildcards=[]):
-    if base_dir == None:
-        base_dir = settings.LUNA_16_TRAIN_DIR
-    src_dir = base_dir + patient_id + "/"
-    src_img_paths = glob.glob(src_dir + wildcard)
-    for exclude_wildcard in exclude_wildcards:
-        exclude_img_paths = glob.glob(src_dir + exclude_wildcard)
-        src_img_paths = [im for im in src_img_paths if im not in exclude_img_paths]
-    src_img_paths.sort()
-    images = [cv2.imread(img_path, cv2.IMREAD_GRAYSCALE) for img_path in src_img_paths]
-    images = [im.reshape((1, ) + im.shape) for im in images]
-    res = numpy.vstack(images)
-    return res
+def load_patient_images(uid, extension):
+    dir_path = os.path.join(settings.LUNA_IMAGE_DIR,uid)
+    img_names = os.listdir(dir_path)
+    ext_len = int(len(extension) * -1)
+    img_paths = [os.path.join(dir_path,img_name) for img_name in img_names if img_name[ext_len:]==extension]
+    img_paths.sort()
+    images = [cv2.imread(img_path, cv2.IMREAD_GRAYSCALE) for img_path in img_paths]
+    images = [img.reshape((1, ) + img.shape) for img in images]
+    vol = numpy.vstack(images)
+    return vol
 
 def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask_image=False):
-    if verbose:
-        print("Spacing: ", org_spacing_xyz)
-        print("Shape: ", images_zyx.shape)
 
     # Resizing dim z
     resize_x = 1.0
     resize_y = float(org_spacing_xyz[2]) / float(target_voxel_mm)
     interpolation = cv2.INTER_NEAREST if is_mask_image else cv2.INTER_LINEAR
-    res = cv2.resize(images_zyx, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)  # opencv assumes y, x, channels umpy array, so y = z pfff
-
+    res = cv2.resize(images_zyx, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)  
+    # opencv assumes y, x, channels umpy array, so y = z pfff
 
     res = res.swapaxes(0, 2)
     res = res.swapaxes(0, 1)
@@ -82,42 +76,6 @@ def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask
     return res
 
 
-def rescale_patient_images2(images_zyx, target_shape, verbose=False):
-    if verbose:
-        print("Target: ", target_shape)
-        print("Shape: ", images_zyx.shape)
-
-    # print "Resizing dim z"
-    resize_x = 1.0
-    interpolation = cv2.INTER_NEAREST if False else cv2.INTER_LINEAR
-    res = cv2.resize(images_zyx, dsize=(target_shape[1], target_shape[0]), interpolation=interpolation)  # opencv assumes y, x, channels umpy array, so y = z pfff
-    # print "Shape is now : ", res.shape
-
-    res = res.swapaxes(0, 2)
-    res = res.swapaxes(0, 1)
-
-    # cv2 can handle max 512 channels..
-    if res.shape[2] > 512:
-        res = res.swapaxes(0, 2)
-        res1 = res[:256]
-        res2 = res[256:]
-        res1 = res1.swapaxes(0, 2)
-        res2 = res2.swapaxes(0, 2)
-        res1 = cv2.resize(res1, dsize=(target_shape[2], target_shape[1]), interpolation=interpolation)
-        res2 = cv2.resize(res2, dsize=(target_shape[2], target_shape[1]), interpolation=interpolation)
-        res1 = res1.swapaxes(0, 2)
-        res2 = res2.swapaxes(0, 2)
-        res = numpy.vstack([res1, res2])
-        res = res.swapaxes(0, 2)
-    else:
-        res = cv2.resize(res, dsize=(target_shape[2], target_shape[1]), interpolation=interpolation)
-
-    res = res.swapaxes(0, 2)
-    res = res.swapaxes(2, 1)
-    if verbose:
-        print("Shape after: ", res.shape)
-    return res
-
 def get_segmented_lungs(im, plot=False):
     # Step 1: Convert into a binary image.
     binary = im < -400
@@ -126,10 +84,11 @@ def get_segmented_lungs(im, plot=False):
     # Step 3: Label the image.
     label_image = label(cleared)
     # Step 4: Keep the labels with 2 largest areas.
-    areas = [r.area for r in regionprops(label_image)]
+    regprops = regionprops(label_image)
+    areas = [r.area for r in regprops]
     areas.sort()
     if len(areas) > 2:
-        for region in regionprops(label_image):
+        for region in regprops:
             if region.area < areas[-2]:
                 for coordinates in region.coords:
                        label_image[coordinates[0], coordinates[1]] = 0

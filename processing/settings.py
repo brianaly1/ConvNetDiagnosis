@@ -13,6 +13,6 @@ NDSB3_SRC_DIR = ""
 LUNA_SRC_DIR = "/home/alyb/Data/Luna/"
 
 NDSB3_EXTRACTED_IMAGE_DIR = ""
-LUNA_EXTRACTED_IMAGE_DIR = "/home/alyb/Data/patients/LunaImages/"
+LUNA_IMAGE_DIR = "/home/alyb/Data/Patients/LunaImages/"
 NDSB3_NODULE_DETECTION_DIR = ""
 
