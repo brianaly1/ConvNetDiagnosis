@@ -6,6 +6,9 @@ import settings
 import pandas
 import numpy as np
 import math
+import glob
+import cv2
+import random
 
 
 def process_pos_annotation(path, uid):
@@ -334,7 +337,7 @@ def process_annotations(mode):
         elif mode==2:
             process_luna_candidates(patients[patient], patient)   
         elif mode==3:
-            process_auto_candidates(patients[patient], patient,sample_count=200, candidate_type="edge"  
+            process_auto_candidates(patients[patient], patient,sample_count=200, candidate_type="edge")  
         candidate_index += 1
         print('-------------------------------------------')
 
@@ -342,6 +345,7 @@ def process_annotations(mode):
 
 def main():
     process_annotations(2)
+    process_annotations(3)
     
 if __name__=="__main__":
     main()

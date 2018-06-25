@@ -107,8 +107,66 @@ def get_segmented_lungs(im, plot=False):
     im[get_high_vals] = -2000
     return im, binary
 
+def get_cube_from_img(img3d, center_x, center_y, center_z, block_size):
+    start_x = max(center_x - block_size / 2, 0)
+    if start_x + block_size > img3d.shape[2]:
+        start_x = img3d.shape[2] - block_size
 
+    start_y = max(center_y - block_size / 2, 0)
+    start_z = max(center_z - block_size / 2, 0)
+    if start_z + block_size > img3d.shape[0]:
+        start_z = img3d.shape[0] - block_size
+    start_z = int(start_z)
+    start_y = int(start_y)
+    start_x = int(start_x)
+    res = img3d[start_z:start_z + block_size, start_y:start_y + block_size, start_x:start_x + block_size]
+    return res
 
+def save_cube_img(target_path, cube_img, rows, cols):
+    assert rows * cols == cube_img.shape[0]
+    img_height = cube_img.shape[1]
+    img_width = cube_img.shape[1]
+    res_img = numpy.zeros((rows * img_height, cols * img_width), dtype=numpy.uint8)
 
+    for row in range(rows):
+        for col in range(cols):
+            target_y = row * img_height
+            target_x = col * img_width
+            res_img[target_y:target_y + img_height, target_x:target_x + img_width] = cube_img[row * cols + col]
+
+    cv2.imwrite(target_path, res_img)
+
+def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True):
+    map_entries = None
+    if map_id is not None:
+        map_entries = PRINT_TAB_MAP[map_id]
+
+    if map_entries is not None and show_map_idx:
+        idx = str(len(map_entries))
+        if idx == "0":
+            idx = "idx"
+        value_list.insert(0, idx)
+        if justifications is not None:
+            justifications.insert(0, 6)
+
+    value_list = [str(v) for v in value_list]
+    if justifications is not None:
+        new_list = []
+        assert(len(value_list) == len(justifications))
+        for idx, value in enumerate(value_list):
+            str_value = str(value)
+            just = justifications[idx]
+            if just > 0:
+                new_value = str_value.ljust(just)
+            else:
+                new_value = str_value.rjust(just)
+            new_list.append(new_value)
+
+        value_list = new_list
+
+    line = "\t".join(value_list)
+    if map_entries is not None:
+        map_entries.append(line)
+    print(line)
 
 
