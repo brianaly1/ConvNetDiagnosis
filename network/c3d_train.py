@@ -143,6 +143,7 @@ def train(train_files,val_files,load_check = False):
     Train the model for a number of steps
     '''
     train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints")
+    val_path = os.path.join(settings.TRAIN_DATA_DIR,"Val","validation.p")
     with tf.Graph().as_default(), tf.device('/cpu:0'):
         # create a var to count the num of train() calls - number of batches run * num of gpus
         global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),   
@@ -304,7 +305,7 @@ def train(train_files,val_files,load_check = False):
             # Save the model checkpoint and validation data.
             if (step+1) % 500 == 0 or step == MAX_STEPS-1:
                 saver.save(sess, checkpoint_path, global_step=step)
-                with open('/home/alyb/ConvNetDiagnosis/network/val/validation.p',"wb") as openfile:
+                with open(val_path,"wb") as openfile:
                     pickle.dump({'accs':total_val_accs,'loss':total_val_loss},openfile) 
 
 def main(argv=None):  # pylint: disable=unused-argument
