@@ -78,6 +78,7 @@ def create_dataset(categories,labels,translations,total_count,vox_size):
                     mini_batch.extend(sub_volumes)
                     mb_labels.extend(sv_labels)
 
+            mini_batch,mb_labels = _shuffle(np.array(mini_batch),np.array(mb_labels))
             saveTf(mini_batch,mb_labels,file_counter)
             file_counter += 1
         except IndexError:

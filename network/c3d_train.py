@@ -25,16 +25,17 @@ import c3d
 import random
 import math
 import pickle
+sys.path.insert(0, '/home/alyb/ConvNetDiagnosis/processing/')
+import settings 
 
-TRAIN_DIR = '/home/alyb/ConvNetDiagnosis/network/checkpoints/' 
+
 MAX_STEPS = 250000
 NUM_GPUS = 2
 GPUS = ['/gpu:2','/gpu:3']
-BATCH_SIZE = 200
-DATA_DIR = '/home/alyb/data/tfrecords/tfrecords-train/'
+BATCH_SIZE = 100
 VOL_SHAPE = [32,32,32]
-TOT_EXAMPLES = 360000
-SHUFFLE_BATCH = 36000
+TOT_EXAMPLES = 680000
+SHUFFLE_BATCH = 34000
 
 def _parse_function(example_proto):
     '''
@@ -55,6 +56,7 @@ def _parse_function(example_proto):
     volume = tf.reshape(volume_1d,tf.stack(VOL_SHAPE))
     volume = tf.expand_dims(volume,-1)
     volume = tf.cast(volume,tf.float32)
+    volume = volume / 255
     return volume,label
     
 def average_gradients(tower_grads):
@@ -140,6 +142,7 @@ def train(train_files,val_files,load_check = False):
     '''
     Train the model for a number of steps
     '''
+    train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints")
     with tf.Graph().as_default(), tf.device('/cpu:0'):
         # create a var to count the num of train() calls - number of batches run * num of gpus
         global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),   
@@ -222,7 +225,7 @@ def train(train_files,val_files,load_check = False):
         sess.run(init)
         sess.run(iterator.initializer, feed_dict={filenames: train_files[0:SHUFFLE_BATCH//1000]})
         sess.run(iterator_val.initializer)
-        summary_writer = tf.summary.FileWriter(TRAIN_DIR, sess.graph)
+        summary_writer = tf.summary.FileWriter(train_dir, sess.graph)
         file_groups = math.ceil(float(TOT_EXAMPLES)/float(SHUFFLE_BATCH)) #chunking the input file list to solve the global shuffle issue
         group_counter = 1 
         epoch_count = 0
@@ -230,9 +233,9 @@ def train(train_files,val_files,load_check = False):
         moving_avg = 0 
         total_val_accs = []
         total_val_loss = []
-        checkpoint_path = os.path.join(TRAIN_DIR,'model.ckpt')
+        checkpoint_path = os.path.join(train_dir,'model.ckpt')
         if load_check:
-            saver.restore(sess, tf.train.latest_checkpoint(TRAIN_DIR)) 
+            saver.restore(sess, tf.train.latest_checkpoint(train_dir)) 
         for step in xrange(MAX_STEPS):
             start_time = time.time()
             _, loss_value,acc_values,summary_str = sess.run([train_op, loss, tower_accs, summary_op],feed_dict={is_training:True})
@@ -305,15 +308,13 @@ def train(train_files,val_files,load_check = False):
                     pickle.dump({'accs':total_val_accs,'loss':total_val_loss},openfile) 
 
 def main(argv=None):  # pylint: disable=unused-argument
-    #if tf.gfile.Exists(TRAIN_DIR):
-    #    tf.gfile.DeleteRecursively(TRAIN_DIR)
-    #tf.gfile.MakeDirs(TRAIN_DIR)
-    data_files = os.listdir(DATA_DIR)
-    training_set = data_files[0:360]
-    training_paths = list(map(lambda file: os.path.join(DATA_DIR,file),training_set))
-    validation_set = data_files[360:370]
-    validation_paths = list(map(lambda file: os.path.join(DATA_DIR,file),validation_set))
-    train(training_paths,validation_paths,True)
+    data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords")
+    data_files = os.listdir(data_dir)
+    training_set = data_files[0:272]
+    training_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),training_set))
+    validation_set = data_files[272:280]
+    validation_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),validation_set))
+    train(training_paths,validation_paths,False)
 
 
 if __name__ == '__main__':
