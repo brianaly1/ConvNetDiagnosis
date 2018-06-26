@@ -3,7 +3,7 @@ import sys
 import settings
 import glob
 import math
-import numpy
+import numpy as np
 import cv2
 from skimage.segmentation import clear_border
 from skimage.measure import label, regionprops
@@ -36,7 +36,7 @@ def load_patient_images(uid, extension):
     img_paths.sort()
     images = [cv2.imread(img_path, cv2.IMREAD_GRAYSCALE) for img_path in img_paths]
     images = [img.reshape((1, ) + img.shape) for img in images]
-    vol = numpy.vstack(images)
+    vol = np.vstack(images)
     return vol
 
 def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask_image=False):
@@ -65,7 +65,7 @@ def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask
         res2 = cv2.resize(res2, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)
         res1 = res1.swapaxes(0, 2)
         res2 = res2.swapaxes(0, 2)
-        res = numpy.vstack([res1, res2])
+        res = np.vstack([res1, res2])
         res = res.swapaxes(0, 2)
     else:
         res = cv2.resize(res, dsize=None, fx=resize_x, fy=resize_y, interpolation=interpolation)
@@ -126,7 +126,7 @@ def save_cube_img(target_path, cube_img, rows, cols):
     assert rows * cols == cube_img.shape[0]
     img_height = cube_img.shape[1]
     img_width = cube_img.shape[1]
-    res_img = numpy.zeros((rows * img_height, cols * img_width), dtype=numpy.uint8)
+    res_img = np.zeros((rows * img_height, cols * img_width), dtype=np.uint8)
 
     for row in range(rows):
         for col in range(cols):
@@ -135,6 +135,21 @@ def save_cube_img(target_path, cube_img, rows, cols):
             res_img[target_y:target_y + img_height, target_x:target_x + img_width] = cube_img[row * cols + col]
 
     cv2.imwrite(target_path, res_img)
+
+def load_cube_img(src_path, rows, cols, size):
+    img = cv2.imread(src_path, cv2.IMREAD_GRAYSCALE)
+    res = np.zeros((rows * cols, size, size))
+
+    img_height = size
+    img_width = size
+
+    for row in range(rows):
+        for col in range(cols):
+            src_y = row * img_height
+            src_x = col * img_width
+            res[row * cols + col] = img[src_y:src_y + img_height, src_x:src_x + img_width]
+
+    return res
 
 def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True):
     map_entries = None
@@ -168,5 +183,56 @@ def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True
     if map_entries is not None:
         map_entries.append(line)
     print(line)
+
+def prepare_example(volume,vox_size,translations, label): 
+    '''
+    Extract example from larger volume, optionally apply random translations to examples 
+    for augmentation
+    Inputs: 
+        volume: list of slices, making up volume (np arrays)
+        vox_size: desired sub volume size (tuple)
+        translations: desired number of translations  
+        label: nodule or not 
+    Outputs:
+        sub_volumes: list of sub volumes (3d np arrays)
+        labels: list of labels 
+    '''
+    
+    sub_vols = []
+
+    volume_np = np.array(volume)
+    vox_size_np = np.array(vox_size)
+    translations = int(translations)
+    label = int(label)
+
+    # extract sub volume
+    vol_size = np.array(np.shape(volume_np)) 
+    margin = (vol_size - vox_size_np)/2
+    top_left = margin.astype(int) 
+    bot_right = (vol_size - margin).astype(int)  
+    sub_volume = volume_np[top_left[0]:bot_right[0],top_left[1]:bot_right[1],top_left[2]:bot_right[2]]
+
+    assert np.shape(sub_volume) == vox_size, "extracted sub volume shape does not match desired shape"
+
+    sub_vols.append(sub_volume)
+    
+    #augment with random translations 
+    if translations!=1:
+        max_shift = min(margin)
+        deltas = np.random.randint(low=-max_shift,high=max_shift,size=(translations-1,1,3)) 
+        for translation in deltas:
+            trans_np = np.squeeze(translation)
+            top_left_new = (top_left + trans_np).astype(int)
+            bot_right_new = (bot_right + trans_np).astype(int)
+
+            sub_volume = volume[top_left_new[0]:bot_right_new[0],top_left_new[1]:bot_right_new[1],top_left_new[2]:bot_right_new[2]]
+
+            assert np.shape(sub_volume) == vox_size, "extracted sub volume shape does not match desired shape"
+
+            sub_vols.append(sub_volume)
+
+    labels = [label]*len(sub_vols)
+
+    return sub_vols,labels
 
 

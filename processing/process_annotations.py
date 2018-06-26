@@ -304,7 +304,7 @@ def process_auto_candidates(path, uid, sample_count=1000, candidate_type="white"
             pos_coord_z = row["coord_z"] * len(src_files)
             diameter = row["diameter"] * src_candidate_maps[0].shape[1]
             dist = math.sqrt(math.pow(pos_coord_x - coord_x, 2) + math.pow(pos_coord_y - coord_y, 2) + math.pow(pos_coord_z - coord_z, 2))
-            if dist < (diameter + 48): #  make sure we have a big margin
+            if dist < (diameter + 64): #  make sure we have a big margin
                 ok = False
                 print("# Too close", (coord_x, coord_y, coord_z))
                 break
