@@ -34,9 +34,9 @@ NUM_GPUS = 2
 GPUS = ['/gpu:2','/gpu:3']
 BATCH_SIZE = 100
 VOL_SHAPE = [32,32,32]
-TOT_EXAMPLES = 680000
-SHUFFLE_BATCH = 34000
-
+TOT_EXAMPLES = 675000
+SHUFFLE_BATCH = 25000
+EX_PER_RECORD = 2500
 def _parse_function(example_proto):
     '''
     parse tf record example and convert from strings to arrays
@@ -224,7 +224,7 @@ def train(train_files,val_files,load_check = False):
         # implementations.
         sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,log_device_placement=True))
         sess.run(init)
-        sess.run(iterator.initializer, feed_dict={filenames: train_files[0:SHUFFLE_BATCH//1000]})
+        sess.run(iterator.initializer, feed_dict={filenames: train_files[0:SHUFFLE_BATCH//EX_PER_RECORD]})
         sess.run(iterator_val.initializer)
         summary_writer = tf.summary.FileWriter(train_dir, sess.graph)
         file_groups = math.ceil(float(TOT_EXAMPLES)/float(SHUFFLE_BATCH)) #chunking the input file list to solve the global shuffle issue
@@ -265,18 +265,18 @@ def train(train_files,val_files,load_check = False):
                     mean_acc = np.mean(np.array(total_accs))
                     total_accs = [] #reset
                     group_counter = 0 #reset
-                    lower_bound = group_counter*SHUFFLE_BATCH//1000
-                    upper_bound = (group_counter+1)*SHUFFLE_BATCH//1000
+                    lower_bound = group_counter*SHUFFLE_BATCH//EX_PER_RECORD
+                    upper_bound = (group_counter+1)*SHUFFLE_BATCH//EX_PER_RECORD
                     random.shuffle(train_files) 
                     sess.run(iterator.initializer, feed_dict={filenames: train_files[lower_bound:upper_bound]})
                     print("epoch number: %d" %epoch_count)
                     print("epoch average acc: %.4f" %mean_acc)    
                 elif group_counter == file_groups-1:
-                    lower_bound = group_counter*SHUFFLE_BATCH//1000
+                    lower_bound = group_counter*SHUFFLE_BATCH//EX_PER_RECORD
                     sess.run(iterator.initializer, feed_dict={filenames: train_files[lower_bound:]})
                 else:
-                    lower_bound = group_counter*SHUFFLE_BATCH//1000
-                    upper_bound = (group_counter+1)*SHUFFLE_BATCH//1000
+                    lower_bound = group_counter*SHUFFLE_BATCH//EX_PER_RECORD
+                    upper_bound = (group_counter+1)*SHUFFLE_BATCH//EX_PER_RECORD
                     sess.run(iterator.initializer, feed_dict={filenames: train_files[lower_bound:upper_bound]})
                  
                 group_counter = group_counter + 1           
@@ -311,9 +311,9 @@ def train(train_files,val_files,load_check = False):
 def main(argv=None):  # pylint: disable=unused-argument
     data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords")
     data_files = os.listdir(data_dir)
-    training_set = data_files[0:272]
+    training_set = data_files[0:270]
     training_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),training_set))
-    validation_set = data_files[272:280]
+    validation_set = data_files[270:280]
     validation_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),validation_set))
     train(training_paths,validation_paths,False)
 
