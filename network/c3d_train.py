@@ -34,8 +34,8 @@ NUM_GPUS = 2
 GPUS = ['/gpu:2','/gpu:3']
 BATCH_SIZE = 100
 VOL_SHAPE = [32,32,32]
-TOT_EXAMPLES = 675000
-SHUFFLE_BATCH = 25000
+TOT_EXAMPLES = 690000
+SHUFFLE_BATCH = 30000
 EX_PER_RECORD = 2500
 def _parse_function(example_proto):
     '''
@@ -311,11 +311,11 @@ def train(train_files,val_files,load_check = False):
 def main(argv=None):  # pylint: disable=unused-argument
     data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords")
     data_files = os.listdir(data_dir)
-    training_set = data_files[0:270]
+    training_set = data_files[0:276]
     training_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),training_set))
-    validation_set = data_files[270:280]
+    validation_set = data_files[276:283]
     validation_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),validation_set))
-    train(training_paths,validation_paths,False)
+    train(training_paths,validation_paths,True)
 
 
 if __name__ == '__main__':

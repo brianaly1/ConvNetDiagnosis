@@ -39,6 +39,43 @@ def load_patient_images(uid, extension):
     vol = np.vstack(images)
     return vol
 
+def get_patient_nodules(patient):
+    '''
+    Returns all ground truth nodules for the patient
+    Inputs:
+        patient: patient uid
+    Outputs:
+        nodules: list of lists, [x,y,z] centroids
+    '''
+
+    nodules = []
+
+    labels_path = os.path.join(settings.PATIENTS_DIR,"labels")
+    patient_labels = os.path.join(labels_path,patient)
+
+    if os.path.exists(patient_labels) == False:
+        print("Patient has no annotations")
+        return None
+    
+    luna_labels = os.path.join(patient_labels,patient+"_annos_pos.csv")
+    #lidc_labels = os.path.join(patient_labels,patient+"_annos_pos_lidc.csv") 
+
+    pos_labels = [luna_labels]
+
+    patient_imgs = load_patient_images(patient, "_i.png")
+
+    for csv_file in pos_labels:
+        df_annos = pandas.read_csv(csv_file)
+        for index, row in df_annos.iterrows():
+            c_x = row["coord_x"] * patient_imgs.shape[2]
+            c_y = row["coord_y"] * patient_imgs.shape[1]
+            c_z = row["coord_z"] * patient_imgs.shape[0]
+            cen = [c_x,c_y,c_z]
+            if cen not in nodules:
+                nodules.append(cen)
+    
+    return nodules              
+        
 def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask_image=False):
 
     # Resizing dim z
@@ -234,5 +271,59 @@ def prepare_example(volume,vox_size,translations, label):
     labels = [label]*len(sub_vols)
 
     return sub_vols,labels
+
+def partition_volume(uid, centroids, sub_vol_shape, mag=1): 
+    '''
+    Partition a volume into relevant sub volumes, and generate labels for each
+    Inputs:
+        uid: patient uid
+        centroids: locations of nodules in the volume - list of lists [x,y,z]
+        sub_vol_shape: desired sub volume shape - tuple (z,y,x)
+    Outputs:
+        sub_vol_centroids: centroids of the individual sub volumes
+        labels: label of each centroid
+    '''
+
+    patient_img = load_patient_images(uid, extension = "_i.png")
+    patient_mask = load_patient_images(uid, extension = "_m.png")
+
+    if mag!=1:
+        patient_img = rescale_patient_images(patient_img, (1,1,1), mag, is_mask_image=False)
+        patient_mask = rescale_patient_images(patient_mask, (1,1,1), mag, is_mask_image=True)
+
+    vol_shape = np.array(np.shape(patient_img))
+    sub_vol_shape = np.array(sub_vol_shape)
+
+    sub_vols = []
+    sub_vol_cens = []
+    labels = []
+
+    k_step = int(sub_vol_shape[0])
+    i_step = int(sub_vol_shape[1])
+    j_step = int(sub_vol_shape[2])
+
+    limits = (vol_shape-sub_vol_shape/2).astype(int)
+    for k in range(k_step//2,limits[0],k_step):
+        for i in range(i_step//2,limits[1],i_step):
+            for j in range(j_step//2,limits[2],j_step):
+
+                centroid = [j,i,k]
+                centroid_np = np.array(centroid)
+                label = 0
+
+                for nodule in centroids:
+                    nodule_np = np.array(nodule)
+                    if np.all(np.absolute(centroid_np-nodule_np)<sub_vol_shape/2) == True:
+                        label = 1 
+
+                sub_vol = get_cube_from_img(patient_img, centroid[0], centroid[1], centroid[2], sub_vol_shape[0])  
+                masked_sub_vol = get_cube_from_img(patient_mask, centroid[0], centroid[1], centroid[2], sub_vol_shape[0])   
+           
+                if masked_sub_vol.sum() > 2000:
+                    sub_vols.append(sub_vol)
+                    sub_vol_cens.append(centroid)
+                    labels.append(label)
+
+    return sub_vols, sub_vol_cens, labels
 
 
