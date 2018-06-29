@@ -30,8 +30,8 @@ import settings
 
 
 MAX_STEPS = 250000
-NUM_GPUS = 2
-GPUS = ['/gpu:2','/gpu:3']
+NUM_GPUS = 6
+GPUS = ['/gpu:1','/gpu:2','/gpu:3','/gpu:4','/gpu:5','/gpu:6']
 BATCH_SIZE = 100
 VOL_SHAPE = [32,32,32]
 TOT_EXAMPLES = 690000
