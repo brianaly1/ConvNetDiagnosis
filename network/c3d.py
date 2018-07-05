@@ -149,13 +149,14 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[1,1,1,64,1],0.0005,is_training)
         biases = variable_on_cpu('biases', [1], tf.constant_initializer(0.0))
         pre_activation = conv3d(bottle_neck, kernel,1,1,1) + biases
-        logits = tf.squeeze(pre_activation,[2,3,4],name='logits')  
-        activation_summary(logits)
+        logits = tf.squeeze(pre_activation,[2,3,4],name='logits') 
+        output = tf.nn.softplus(logits,name="output") 
+        activation_summary(output)
 
-    return logits
+    return output
 
 
-def loss(logits, labels, is_training):
+def loss(logits, labels, is_training, mode):
     """
     compute cross entropy loss and l2 loss of all weight decay vars
     Inputs:
@@ -164,13 +165,18 @@ def loss(logits, labels, is_training):
     Outputs:
         Loss tensor
     """
-    cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits, name='cross_entropy_per_example')
-    cross_entropy_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
+
+    if mode==0:
+        loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits, name='cross_entropy_per_example')
+        loss_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
+    elif mode==1:
+        loss_mean = tf.losses.mean_squared_error(labels,logits)
+
     if is_training == True:
-        tf.add_to_collection('losses', cross_entropy_mean)
+        tf.add_to_collection('losses', loss_mean)
         return tf.add_n(tf.get_collection('losses'), name='total_loss')
     else:
-        tf.add_to_collection('val_losses', cross_entropy_mean)
+        tf.add_to_collection('val_losses', loss_mean)
         return tf.add_n(tf.get_collection('val_losses'), name='val_loss_total')
 
     

@@ -18,7 +18,8 @@ def make_annotation_images(mode):
         ext = "*_annos_pos.csv"
         dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"POS")
       
-    patients = utils.load_patients_list()
+    #patients = utils.load_patients_list()
+    patients = os.listdir(settings.LUNA_IMAGE_DIR)
 
     for patient_index,patient in enumerate(patients):
         csv_dir = os.path.join(src_dir,patient) + '/'
@@ -51,6 +52,7 @@ def make_annotation_images(mode):
 
             if mode==0:
                 target_path = os.path.join(dst_dir,patient + "_" + str(anno_index) + "_" + str(malscore * malscore) + "_1_pos.png")
+
             elif mode==1:
                 target_path = os.path.join(dst_dir,patient + "_" + str(anno_index) + "_" + str(diam) + "_1_pos.png")
 
@@ -114,10 +116,10 @@ def make_candidate_images(mode):
         utils.print_tabbed([patient_index, patient, len(df_annos)], [5, 64, 8])
 
 def main():
-    #make_annotation_images(0)
+    make_annotation_images(0)
     #make_annotation_images(1)
-    make_candidate_images(0)
-    make_candidate_images(1)
+    #make_candidate_images(0)
+    #make_candidate_images(1)
     
 if __name__ == "__main__":
     main()

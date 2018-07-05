@@ -22,6 +22,7 @@ def saveTf(sub_volumes,centroids,labels,file_name):
         labels:  np array of binary labels of size [num_examples]
         file_index: index used to give each file a unique name
     '''
+
     save_path = os.path.join(settings.TRAIN_DATA_DIR,"TFRecordsTest",file_name+".tfrecords")
     num_examples = np.shape(sub_volumes)[0]
     assert num_examples == np.shape(labels)[0] , "volume array size does not match labels array size"
@@ -31,11 +32,11 @@ def saveTf(sub_volumes,centroids,labels,file_name):
     with tf.python_io.TFRecordWriter(save_path) as writer:
         for i in range(num_examples):
             volume_raw = sub_volumes[i].tostring()
-            centroid = [int(x) for x in centroids[i]]
+            centroid_raw = centroids[i].tostring()
             example = tf.train.Example(features=tf.train.Features(feature={
                                        'label': _int64_feature([int(labels[i])]),
                                        'volume_raw': _bytes_feature(volume_raw),
-                                       'center': _int64_feature(centroid)
+                                       'centroid_raw': _bytes_feature(centroid_raw)
                                                                              }))
             writer.write(example.SerializeToString())
 

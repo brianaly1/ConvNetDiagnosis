@@ -39,6 +39,15 @@ def load_patient_images(uid, extension):
     vol = np.vstack(images)
     return vol
 
+def get_mal_from_name(file_name):
+
+    if file_name[-12:-11] == "_":
+        mal = int(file_name[-11:-10])
+    else:
+        mal = int(file_name[-12:-10])
+
+    return mal
+
 def get_patient_nodules(patient):
     '''
     Returns all ground truth nodules for the patient
@@ -55,7 +64,7 @@ def get_patient_nodules(patient):
 
     if os.path.exists(patient_labels) == False:
         print("Patient has no annotations")
-        return None
+        return []
     
     luna_labels = os.path.join(patient_labels,patient+"_annos_pos.csv")
     #lidc_labels = os.path.join(patient_labels,patient+"_annos_pos_lidc.csv") 
@@ -67,9 +76,9 @@ def get_patient_nodules(patient):
     for csv_file in pos_labels:
         df_annos = pandas.read_csv(csv_file)
         for index, row in df_annos.iterrows():
-            c_x = row["coord_x"] * patient_imgs.shape[2]
-            c_y = row["coord_y"] * patient_imgs.shape[1]
-            c_z = row["coord_z"] * patient_imgs.shape[0]
+            c_x = int(row["coord_x"] * patient_imgs.shape[2])
+            c_y = int(row["coord_y"] * patient_imgs.shape[1])
+            c_z = int(row["coord_z"] * patient_imgs.shape[0])
             cen = [c_x,c_y,c_z]
             if cen not in nodules:
                 nodules.append(cen)
@@ -161,7 +170,7 @@ def get_cube_from_img(img3d, center_x, center_y, center_z, block_size):
 
 def save_cube_img(target_path, cube_img, rows, cols):
     assert rows * cols == cube_img.shape[0]
-    img_height = cube_img.shape[1]
+    img_height = cube_img.shape[0]
     img_width = cube_img.shape[1]
     res_img = np.zeros((rows * img_height, cols * img_width), dtype=np.uint8)
 
@@ -176,7 +185,6 @@ def save_cube_img(target_path, cube_img, rows, cols):
 def load_cube_img(src_path, rows, cols, size):
     img = cv2.imread(src_path, cv2.IMREAD_GRAYSCALE)
     res = np.zeros((rows * cols, size, size))
-
     img_height = size
     img_width = size
 
@@ -185,7 +193,6 @@ def load_cube_img(src_path, rows, cols, size):
             src_y = row * img_height
             src_x = col * img_width
             res[row * cols + col] = img[src_y:src_y + img_height, src_x:src_x + img_width]
-
     return res
 
 def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True):
@@ -221,7 +228,7 @@ def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True
         map_entries.append(line)
     print(line)
 
-def prepare_example(volume,vox_size,translations, label): 
+def prepare_example(volume,vox_size,translations,category,example): 
     '''
     Extract example from larger volume, optionally apply random translations to examples 
     for augmentation
@@ -229,7 +236,8 @@ def prepare_example(volume,vox_size,translations, label):
         volume: list of slices, making up volume (np arrays)
         vox_size: desired sub volume size (tuple)
         translations: desired number of translations  
-        label: nodule or not 
+        category: EDGE,LIDC,LUNA,POS
+        example: file name of the current example
     Outputs:
         sub_volumes: list of sub volumes (3d np arrays)
         labels: list of labels 
@@ -240,7 +248,17 @@ def prepare_example(volume,vox_size,translations, label):
     volume_np = np.array(volume)
     vox_size_np = np.array(vox_size)
     translations = int(translations)
-    label = int(label)
+
+    if category == "EDGE":
+        label = 0
+    elif category == "LIDC":
+        label = 1
+        if mode==1:
+            label = get_mal_from_name(example)
+    elif category == "POS":
+        label = 1
+    elif category == "NEG":
+        label = 0
 
     # extract sub volume
     vol_size = np.array(np.shape(volume_np)) 
@@ -255,10 +273,10 @@ def prepare_example(volume,vox_size,translations, label):
     
     #augment with random translations 
     if translations!=1:
-        max_shift = min(margin)
-        deltas = np.random.randint(low=-max_shift,high=max_shift,size=(translations-1,1,3)) 
+        max_shift = min(margin)//2
+        deltas = np.random.randint(low=-max_shift,high=max_shift,size=(translations-1,3)) 
         for translation in deltas:
-            trans_np = np.squeeze(translation)
+            trans_np = translation
             top_left_new = (top_left + trans_np).astype(int)
             bot_right_new = (bot_right + trans_np).astype(int)
 
@@ -298,9 +316,9 @@ def partition_volume(uid, centroids, sub_vol_shape, mag=1):
     sub_vol_cens = []
     labels = []
 
-    k_step = int(sub_vol_shape[0])
-    i_step = int(sub_vol_shape[1])
-    j_step = int(sub_vol_shape[2])
+    k_step = int(sub_vol_shape[0]/2)
+    i_step = int(sub_vol_shape[1]/2)
+    j_step = int(sub_vol_shape[2]/2)
 
     limits = (vol_shape-sub_vol_shape/2).astype(int)
     for k in range(k_step//2,limits[0],k_step):
@@ -316,8 +334,8 @@ def partition_volume(uid, centroids, sub_vol_shape, mag=1):
                     if np.all(np.absolute(centroid_np-nodule_np)<sub_vol_shape/2) == True:
                         label = 1 
 
-                sub_vol = get_cube_from_img(patient_img, centroid[0], centroid[1], centroid[2], sub_vol_shape[0])  
-                masked_sub_vol = get_cube_from_img(patient_mask, centroid[0], centroid[1], centroid[2], sub_vol_shape[0])   
+                sub_vol = get_cube_from_img(patient_img, centroid[0], centroid[1], centroid[2], sub_vol_shape[0]).astype(np.float64)  
+                masked_sub_vol = get_cube_from_img(patient_mask, centroid[0], centroid[1], centroid[2], sub_vol_shape[0]).astype(np.float64)   
            
                 if masked_sub_vol.sum() > 2000:
                     sub_vols.append(sub_vol)

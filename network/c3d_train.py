@@ -27,16 +27,19 @@ import math
 import pickle
 sys.path.insert(0, '/home/alyb/ConvNetDiagnosis/processing/')
 import settings 
-
+import visualize
+import utils
+import process_train
 
 MAX_STEPS = 250000
-NUM_GPUS = 6
-GPUS = ['/gpu:1','/gpu:2','/gpu:3','/gpu:4','/gpu:5','/gpu:6']
+NUM_GPUS = 5
+GPUS = ['/gpu:1','/gpu:2','/gpu:3','/gpu:4','/gpu:5']
 BATCH_SIZE = 100
 VOL_SHAPE = [32,32,32]
-TOT_EXAMPLES = 690000
+TOT_EXAMPLES = 480000
 SHUFFLE_BATCH = 30000
 EX_PER_RECORD = 2500
+
 def _parse_function(example_proto):
     '''
     parse tf record example and convert from strings to arrays
@@ -85,7 +88,7 @@ def average_gradients(tower_grads):
         averaged_grads.append(pair)
     return averaged_grads    
     
-def tower_loss(scope,volumes,labels,is_training):
+def tower_loss(scope,volumes,labels,is_training,mode):
     '''
     Compute the loss for a gpu tower
 
@@ -102,7 +105,7 @@ def tower_loss(scope,volumes,labels,is_training):
     
     
     # build loss section of graph and assemble total loss for current tower
-    _ = c3d.loss(logits,labels,is_training) # return value would be significant in single gpu training
+    _ = c3d.loss(logits,labels,is_training,mode) # return value would be significant in single gpu training
     
     if is_training == True:
         losses = tf.get_collection('losses',scope)
@@ -138,11 +141,12 @@ def tower_accuracy(labels,logits):
     tf.summary.scalar(mean_acc.op.name, mean_acc)
     return mean_acc
 
-def train(train_files,val_files,load_check = False):
+def train(train_files,val_files,mode,load_check = False):
     '''
     Train the model for a number of steps
     '''
-    train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints")
+    train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","mal")
+    load_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","mal")
     val_path = os.path.join(settings.TRAIN_DATA_DIR,"Val","validation.p")
     with tf.Graph().as_default(), tf.device('/cpu:0'):
         # create a var to count the num of train() calls - number of batches run * num of gpus
@@ -175,7 +179,7 @@ def train(train_files,val_files,load_check = False):
                     with tf.name_scope('%s_%d' % ('tower', i)) as scope:
                         # get one batch for the GPU
                         volume_batch, label_batch = iterator.get_next()
-                        loss,logits = tower_loss(scope, volume_batch, label_batch, is_training)
+                        loss,logits = tower_loss(scope, volume_batch, label_batch, is_training,mode)
                         acc = tower_accuracy(label_batch,logits) 
                         # Reuse variables for the next tower.
                         tf.get_variable_scope().reuse_variables()
@@ -195,7 +199,7 @@ def train(train_files,val_files,load_check = False):
                 with tf.name_scope('%s' % ('val')) as scope: 
                     tf.get_variable_scope().reuse_variables()
                     val_batch, val_labels = iterator_val.get_next()
-                    val_loss,val_logits = tower_loss(scope, val_batch, val_labels, is_training)
+                    val_loss,val_logits = tower_loss(scope, val_batch, val_labels, is_training,mode)
                     val_acc = tower_accuracy(val_labels,val_logits)    
         # Add histograms for gradients.
         for grad, var in averaged_grads:
@@ -236,7 +240,7 @@ def train(train_files,val_files,load_check = False):
         total_val_loss = []
         checkpoint_path = os.path.join(train_dir,'model.ckpt')
         if load_check:
-            saver.restore(sess, tf.train.latest_checkpoint(train_dir)) 
+            saver.restore(sess, tf.train.latest_checkpoint(load_dir)) 
         for step in xrange(MAX_STEPS):
             start_time = time.time()
             _, loss_value,acc_values,summary_str = sess.run([train_op, loss, tower_accs, summary_op],feed_dict={is_training:True})
@@ -304,18 +308,20 @@ def train(train_files,val_files,load_check = False):
                        
             # Save the model checkpoint and validation data.
             if (step+1) % 500 == 0 or step == MAX_STEPS-1:
-                saver.save(sess, checkpoint_path, global_step=step)
+                saver.save(sess, checkpoint_path, global_step=global_step)
                 with open(val_path,"wb") as openfile:
                     pickle.dump({'accs':total_val_accs,'loss':total_val_loss},openfile) 
 
-def main(argv=None):  # pylint: disable=unused-argument
-    data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords")
+def main(argv=None):  
+    mode=1
+    #process_train.main_create(mode)
+    data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords","mal")
     data_files = os.listdir(data_dir)
-    training_set = data_files[0:276]
+    training_set = data_files[0:192]
     training_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),training_set))
-    validation_set = data_files[276:283]
+    validation_set = data_files[192:]
     validation_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),validation_set))
-    train(training_paths,validation_paths,True)
+    train(training_paths,validation_paths,mode,False)
 
 
 if __name__ == '__main__':

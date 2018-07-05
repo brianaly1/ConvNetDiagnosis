@@ -3,6 +3,7 @@ MEAN_PIXEL_VALUE_NODULE = 41
 LUNA_SUBSET_START_INDEX = 0
 SEGMENTER_IMG_SIZE = 320
 SUB_VOL_SHAPE = (32,32,32)
+THRESHOLD = 0.85
 
 BASE_DATA_DIR = "/media/ubuntu/cryptscratch/scratch/alyb/Data/"
 BASE_DIR = "/home/alyb/ConvNetDiagnosis/"

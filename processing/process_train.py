@@ -5,8 +5,6 @@ import utils
 import tensorflow as tf
 import numpy as np
 
-
-
 def _int64_feature(value):
   val_list = []
   val_list.extend(value)
@@ -19,7 +17,7 @@ def _shuffle(X,Y):
   p = np.random.permutation(len(Y))
   return(X[p],Y[p])
 
-def saveTf(volumes,labels,file_index):
+def saveTf(volumes,labels,file_index,mode):
     '''
     Save TFRecord files with data and labels
     Inputs:
@@ -27,7 +25,12 @@ def saveTf(volumes,labels,file_index):
         labels:  np array of binary labels of size [num_examples]
         file_index: each file needs a unique name, index achieves this
     '''
-    save_path = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords",str(file_index)+".tfrecords")
+
+    folder = "roi"
+    if mode == 1:
+        folder = "mal"
+
+    save_path = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords",folder,str(file_index)+".tfrecords")
     num_examples = np.shape(volumes)[0]
     assert num_examples == np.shape(labels)[0] , "volume array size does not match labels array size"
 
@@ -42,14 +45,13 @@ def saveTf(volumes,labels,file_index):
                                                                              }))
             writer.write(example.SerializeToString())
         
-def create_dataset(categories,labels,translations,total_count,vox_size):
+def create_dataset(categories,translations,total_count,vox_size,mode):
     '''
     Load data from the serialized files and chunk into mini batches
     to be saved as TFRecord files
 
     Inputs:
         categories: list of data folders to use
-        labels: list of labels for each category
         total_count: num of examples in a tf record
     '''
     
@@ -57,7 +59,10 @@ def create_dataset(categories,labels,translations,total_count,vox_size):
 
     paths = []
     file_names = []
-    count_per_tf = [625,400,1395,80]
+    count_per_tf = []
+
+    if mode==1:
+        count_per_tf = [560,1940]
 
     for index,category in enumerate(categories):
         cat_path = os.path.join(base_path,category)
@@ -74,28 +79,31 @@ def create_dataset(categories,labels,translations,total_count,vox_size):
                     example = file_names[index].pop()
                     path = os.path.join(paths[index],example)
                     volume = utils.load_cube_img(path, 8, 8, 64)
-                    sub_volumes,sv_labels = utils.prepare_example(volume,vox_size,translations[index],labels[index])
+                    sub_volumes,sv_labels = utils.prepare_example(volume,vox_size,translations[index],category,example)
                     mini_batch.extend(sub_volumes)
                     mb_labels.extend(sv_labels)
 
             mini_batch,mb_labels = _shuffle(np.array(mini_batch),np.array(mb_labels))
-            saveTf(mini_batch,mb_labels,file_counter)
+            saveTf(mini_batch,mb_labels,file_counter,mode)
+            #print(len(mini_batch))
             file_counter += 1
         except IndexError:
             print("ran out of volumes")
-            sys.exit()
+            break
         except KeyboardInterrupt:
             print("keyboard interrupt")
-            sys.exit()
+            break
 
-def main():
-    categories = ["EDGE","LIDC","NEG","POS"]
-    labels = [0,1,0,1]
-    translations = [1,20,1,20]
+def main_create(mode):
+    categories = ["EDGE","LIDC","NEG","POS"] #LIDC 4 and 5 only
+    translations = [1,60,1,60]
+    if mode == 1:
+        categories = ["LIDC","NEG"]
+        translations = [20,1]
     total_count = 2500
     vox_size = (32,32,32)
-    create_dataset(categories,labels,translations,total_count,vox_size)
+    create_dataset(categories,translations,total_count,vox_size,mode)
 
 if __name__=="__main__":
-    main()
+    main_create(1)
 

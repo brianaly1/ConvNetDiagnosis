@@ -6,10 +6,10 @@ VAL_FILE = "/home/alyb/ConvNetDiagnosis/network/val/validation.p"
 def plot_graph(path):
     with open(path,'rb') as openfile:
         val = pickle.load(openfile)
-    loss = val["accs"]
+    loss = val["loss"]
     plt.plot(loss)
-    plt.ylabel("accuracy")
-    plt.xlabel("iteration (per 90)")
+    plt.ylabel("loss")
+    plt.xlabel("iteration group")
     plt.show()    
 
 def main():
