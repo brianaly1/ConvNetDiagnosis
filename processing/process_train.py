@@ -94,7 +94,7 @@ def create_dataset(categories,translations,total_count,vox_size,mode):
             print("keyboard interrupt")
             break
 
-def main_create(mode):
+def main_create(mode=0):
     categories = ["EDGE","LIDC","NEG","POS"] #LIDC 4 and 5 only
     translations = [1,60,1,60]
     if mode == 1:

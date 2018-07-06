@@ -101,7 +101,7 @@ def tower_loss(scope,volumes,labels,is_training,mode):
     '''
     
     # build inference graph
-    logits = c3d.inference(volumes,BATCH_SIZE,is_training) 
+    logits = c3d.inference(volumes,BATCH_SIZE,is_training,mode=mode) 
     
     
     # build loss section of graph and assemble total loss for current tower

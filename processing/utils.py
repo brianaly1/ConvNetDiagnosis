@@ -333,6 +333,7 @@ def partition_volume(uid, centroids, sub_vol_shape, mag=1):
                     nodule_np = np.array(nodule)
                     if np.all(np.absolute(centroid_np-nodule_np)<sub_vol_shape/2) == True:
                         label = 1 
+                        break
 
                 sub_vol = get_cube_from_img(patient_img, centroid[0], centroid[1], centroid[2], sub_vol_shape[0]).astype(np.float64)  
                 masked_sub_vol = get_cube_from_img(patient_mask, centroid[0], centroid[1], centroid[2], sub_vol_shape[0]).astype(np.float64)   

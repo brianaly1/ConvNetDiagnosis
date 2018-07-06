@@ -68,10 +68,9 @@ def variable_with_weight_decay(name, shape, wd, is_training):
 
     return var
 
-def inference(volumes,batch_size,is_training):
+def inference(volumes,batch_size,is_training,mode=0):
     '''
     Perform a forward pass and return output logit/s
-
     Inputs:
         volumes: 5D tensor of shape [batch_size, width, height, depth, channels]
     Outputs:
@@ -149,14 +148,15 @@ def inference(volumes,batch_size,is_training):
         kernel = variable_with_weight_decay('weights',[1,1,1,64,1],0.0005,is_training)
         biases = variable_on_cpu('biases', [1], tf.constant_initializer(0.0))
         pre_activation = conv3d(bottle_neck, kernel,1,1,1) + biases
-        logits = tf.squeeze(pre_activation,[2,3,4],name='logits') 
-        output = tf.nn.softplus(logits,name="output") 
+        output = tf.squeeze(pre_activation,[2,3,4],name='logits') 
+        if mode==1:
+            output = tf.nn.softplus(logits,name="output") 
         activation_summary(output)
 
     return output
 
 
-def loss(logits, labels, is_training, mode):
+def loss(logits, labels, is_training, mode=0):
     """
     compute cross entropy loss and l2 loss of all weight decay vars
     Inputs:
@@ -168,9 +168,11 @@ def loss(logits, labels, is_training, mode):
 
     if mode==0:
         loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=logits, name='cross_entropy_per_example')
-        loss_mean = tf.reduce_mean(cross_entropy, name='cross_entropy')
-    elif mode==1:
-        loss_mean = tf.losses.mean_squared_error(labels,logits)
+        loss_mean = tf.reduce_mean(loss, name='cross_entropy')
+
+    if mode==1:
+        loss = tf.squared_difference(logits,labels)
+        loss_mean = tf.reduce_mean(loss,name='mse')
 
     if is_training == True:
         tf.add_to_collection('losses', loss_mean)

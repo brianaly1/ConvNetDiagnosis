@@ -41,9 +41,9 @@ def _parse_function(example_proto):
     volume = tf.cast(volume,tf.float32)
     volume = volume / 255
     
-    return volume,label
+    return volume,label,center_1d
 
-def predict(files): #load graph...
+def predict(files,mode): #load graph...
 
     CHECKPOINT = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints")
     
@@ -59,8 +59,8 @@ def predict(files): #load graph...
         with tf.variable_scope(tf.get_variable_scope()):  
             with tf.device(GPUS[0]):
                 with tf.name_scope('infer') as scope: 
-                    volume_batch,labels = iterator.get_next()
-                    logits = c3d.inference(volume_batch,BATCH_SIZE,tf.constant(False,dtype=tf.bool))      
+                    volume_batch,labels,centers = iterator.get_next()
+                    logits = c3d.inference(volume_batch,BATCH_SIZE,tf.constant(False,dtype=tf.bool),mode)      
                     predictions = tf.sigmoid(logits)
                     #predictions = tf.round(predictions)
                     #predictions = tf.cast(predictions,dtype=tf.int32)
@@ -73,56 +73,74 @@ def predict(files): #load graph...
         all_predictions = []
         all_labels = []
         all_volumes = []
+        all_cens = []
 
         while True:
             try:
-                pred_vals,label_vals,vol_vals = sess.run([predictions,labels,volume_batch])
+                pred_vals,label_vals,vol_vals,cen_vals = sess.run([predictions,labels,volume_batch,centers])
                 all_predictions.extend(pred_vals)
                 all_labels.extend(label_vals)
-                all_volumes.extend(volume_batch)
+                all_volumes.extend(vol_vals)
+                all_cens.extend(cen_vals)
             except tf.errors.OutOfRangeError:
                 print("inference complete")
+                print("--------------------")
                 all_predictions = np.array(all_predictions,dtype=np.float32)
                 all_predictions = np.squeeze(all_predictions)
                 all_labels = np.array(all_labels)
                 all_labels = np.squeeze(all_labels)  
+                all_cens = np.array(all_cens)
+                all_cens = np.squeeze(all_cens) 
                 all_volumes = np.array(all_volumes)      
                 break
 
-    return(all_predictions,all_labels,all_volumes)
+    return(all_predictions,all_labels,all_volumes,all_cens)
 
 def mine_fps(test_paths):
+
+    fps = [] 
+    fns = []
+    tps = []
+    tns = []
+
+    file_counter = 0
 
     for path in test_paths:
 
         counter = 0
 
-        predictions_np,labels_np,volumes_np = predict([path])
+        predictions_np,labels_np,volumes_np,cens_np = predict([path],mode=0)
         predictions_np[predictions_np > settings.THRESHOLD] = 1
         predictions_np[predictions_np <= settings.THRESHOLD] = 0
         predictions_np = predictions_np.astype(np.int32)
-
         uid = path.split('/')[-1][:-10]
         dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"FP")
-        target_path = os.path.join(dst_dir,uid + "_" + str(counter) + "_0_" + "fp.png")
-
-        pred_list = predictions_np.tolist()
-        label_list = labels_np.tolist()  
-        vol_list = volumes_np.tolist()
-      
-        for index in range(len(label_list)):
-            if pred_list[index] == 1 and label_list[index]==0:
-                utils.save_cube_img(target_path, vol_list[index], 4, 8)
-                sys.exit()
+        for index in range(np.shape(labels_np)[0]):
+            target_path = os.path.join(dst_dir,uid + "_" + str(counter) + "_0_" + "fp.png")
+            if predictions_np[index] == 1 and labels_np[index]==0:
+                fps.append(cens_np[index])
+                volume = np.squeeze(volumes_np[index])
+                utils.save_cube_img(target_path, volume*255, 4, 8)
                 counter+=1
-
-        print(counter)
+            elif predictions_np[index] == 0 and labels_np[index]==1:
+                fns.append(cens_np[index])
+            elif predictions_np[index] == 1 and labels_np[index]==1:
+                tps.append(cens_np[index])
+            elif predictions_np[index] == 0 and labels_np[index]==0:
+                tns.append(cens_np[index])
+        
+        file_counter += 1
+        print("File Number {}".format(file_counter))
+        print("Saved {} false positives".format(counter))
+        print("There are {} fps, {} fns, {} tps, {} tns".format(len(fps),len(fns),len(tps),len(tns)))
+        print("-----------------------------------")
+        
 
     
 def main():
     data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecordsTest")
     tf_data_files = os.listdir(data_dir)  
-    tf_test_set = tf_data_files[0:1]
+    tf_test_set = tf_data_files
     tf_test_paths = list(map(lambda file: os.path.join(data_dir,file),tf_test_set))
     mine_fps(tf_test_paths)
 
