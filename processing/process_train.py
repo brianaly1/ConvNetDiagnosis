@@ -59,7 +59,7 @@ def create_dataset(categories,translations,total_count,vox_size,mode):
 
     paths = []
     file_names = []
-    count_per_tf = []
+    count_per_tf = [1040,640,2360,700,260]
 
     if mode==1:
         count_per_tf = [560,1940]
@@ -78,8 +78,11 @@ def create_dataset(categories,translations,total_count,vox_size,mode):
                 for i in range(0,count_per_tf[index],translations[index]):
                     example = file_names[index].pop()
                     path = os.path.join(paths[index],example)
-                    volume = utils.load_cube_img(path, 8, 8, 64)
-                    sub_volumes,sv_labels = utils.prepare_example(volume,vox_size,translations[index],category,example)
+                    if category == "FP":
+                        volume = utils.load_cube_img(path, 4, 8, 32)
+                    else:
+                        volume = utils.load_cube_img(path, 8, 8, 64)
+                    sub_volumes,sv_labels = utils.prepare_example(volume,vox_size,translations[index],category,example,mode)
                     mini_batch.extend(sub_volumes)
                     mb_labels.extend(sv_labels)
 
@@ -95,15 +98,15 @@ def create_dataset(categories,translations,total_count,vox_size,mode):
             break
 
 def main_create(mode=0):
-    categories = ["EDGE","LIDC","NEG","POS"] #LIDC 4 and 5 only
-    translations = [1,60,1,60]
+    categories = ["EDGE","LIDC","NEG","POS","FP"] #LIDC 4 and 5 only
+    translations = [1,80,1,100,1]
     if mode == 1:
         categories = ["LIDC","NEG"]
         translations = [20,1]
-    total_count = 2500
+    total_count = 5000
     vox_size = (32,32,32)
     create_dataset(categories,translations,total_count,vox_size,mode)
 
 if __name__=="__main__":
-    main_create(1)
+    main_create(mode=0)
 

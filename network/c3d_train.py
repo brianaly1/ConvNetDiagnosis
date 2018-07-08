@@ -1,11 +1,5 @@
 '''
 A script to train the c3d network using multiple gpus
-
-Summary of functions:
-
-# function description
-output = function_name(inputs)
-
 '''
 
 from __future__ import absolute_import
@@ -36,9 +30,9 @@ NUM_GPUS = 5
 GPUS = ['/gpu:1','/gpu:2','/gpu:3','/gpu:4','/gpu:5']
 BATCH_SIZE = 100
 VOL_SHAPE = [32,32,32]
-TOT_EXAMPLES = 480000
-SHUFFLE_BATCH = 30000
-EX_PER_RECORD = 2500
+TOT_EXAMPLES = 800000
+SHUFFLE_BATCH = 40000
+EX_PER_RECORD = 5000
 
 def _parse_function(example_proto):
     '''
@@ -145,8 +139,8 @@ def train(train_files,val_files,mode,load_check = False):
     '''
     Train the model for a number of steps
     '''
-    train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","mal")
-    load_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","mal")
+    train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","roi")
+    load_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","roi")
     val_path = os.path.join(settings.TRAIN_DATA_DIR,"Val","validation.p")
     with tf.Graph().as_default(), tf.device('/cpu:0'):
         # create a var to count the num of train() calls - number of batches run * num of gpus
@@ -313,13 +307,13 @@ def train(train_files,val_files,mode,load_check = False):
                     pickle.dump({'accs':total_val_accs,'loss':total_val_loss},openfile) 
 
 def main(argv=None):  
-    mode=1
-    #process_train.main_create(mode)
-    data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords","mal")
+    mode=0
+    process_train.main_create(mode)
+    data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords","roi")
     data_files = os.listdir(data_dir)
-    training_set = data_files[0:192]
+    training_set = data_files[0:160]
     training_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),training_set))
-    validation_set = data_files[192:]
+    validation_set = data_files[160:]
     validation_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),validation_set))
     train(training_paths,validation_paths,mode,False)
 

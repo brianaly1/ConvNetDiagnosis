@@ -228,7 +228,7 @@ def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True
         map_entries.append(line)
     print(line)
 
-def prepare_example(volume,vox_size,translations,category,example): 
+def prepare_example(volume,vox_size,translations,category,example,mode): 
     '''
     Extract example from larger volume, optionally apply random translations to examples 
     for augmentation
@@ -258,6 +258,8 @@ def prepare_example(volume,vox_size,translations,category,example):
     elif category == "POS":
         label = 1
     elif category == "NEG":
+        label = 0
+    elif category == "FP":
         label = 0
 
     # extract sub volume

@@ -12,5 +12,5 @@ for file_name in files:
         mal.append(int(file_name[-12:-10]))
 
 for index,file_name in enumerate(files):
-    if mal[index] == 9:
+    if mal[index] == 9 or mal[index] == 4 or mal[index] == 1:
         os.remove(file_name)
