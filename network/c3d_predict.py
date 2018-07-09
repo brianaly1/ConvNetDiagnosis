@@ -46,7 +46,10 @@ def _parse_function(example_proto):
 def predict(files,mode): #load graph...
 
     CHECKPOINT = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints")
-    
+    if mode==0:
+        CHECKPOINT = os.path.join(CHECKPOINT,"roi")
+    elif mode==1:
+        CHECKPOINT = os.path.join(CHECKPOINT,"mal")    
     with tf.Graph().as_default(), tf.device('/cpu:0'):
 
         filenames = tf.placeholder(tf.string, shape=[None])
@@ -66,7 +69,7 @@ def predict(files,mode): #load graph...
                     #predictions = tf.cast(predictions,dtype=tf.int32)
 
         saver = tf.train.Saver()
-        sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,log_device_placement=True))
+        sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,log_device_placement=False))
         sess.run(iterator.initializer,feed_dict={filenames:files})
         saver.restore(sess, tf.train.latest_checkpoint(CHECKPOINT))   
 
@@ -96,7 +99,7 @@ def predict(files,mode): #load graph...
 
     return(all_predictions,all_labels,all_volumes,all_cens)
 
-def mine_fps(test_paths):
+def test(test_paths,mode=0,mine_fps=0):
 
     fps = [] 
     fns = []
@@ -107,42 +110,44 @@ def mine_fps(test_paths):
 
     for path in test_paths:
 
-        counter = 0
+        fp_counter = 0
 
-        predictions_np,labels_np,volumes_np,cens_np = predict([path],mode=0)
+        fps.append([])
+        fns.append([])
+        tps.append([])
+        tns.append([])
+
+        predictions_np,labels_np,volumes_np,cens_np = predict([path],mode=mode)
         predictions_np[predictions_np > settings.THRESHOLD] = 1
         predictions_np[predictions_np <= settings.THRESHOLD] = 0
         predictions_np = predictions_np.astype(np.int32)
+        acc = np.mean((predictions_np == labels_np).astype(np.float32)) 
         uid = path.split('/')[-1][:-10]
         dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"FP")
         for index in range(np.shape(labels_np)[0]):
-            target_path = os.path.join(dst_dir,uid + "_" + str(counter) + "_0_" + "fp.png")
+            target_path = os.path.join(dst_dir,uid + "_" + str(fp_counter) + "_0_" + "fp.png")
             if predictions_np[index] == 1 and labels_np[index]==0:
-                fps.append(cens_np[index])
-                volume = np.squeeze(volumes_np[index])
-                utils.save_cube_img(target_path, volume*255, 4, 8)
-                counter+=1
+                fps[-1].extend(cens_np[index])
+                if mine_fps:
+                    volume = np.squeeze(volumes_np[index])
+                    utils.save_cube_img(target_path, volume*255, 4, 8)
+                    fp_counter+=1
             elif predictions_np[index] == 0 and labels_np[index]==1:
-                fns.append(cens_np[index])
+                fns[-1].extend(cens_np[index])
             elif predictions_np[index] == 1 and labels_np[index]==1:
-                tps.append(cens_np[index])
+                tps[-1].extend(cens_np[index])
             elif predictions_np[index] == 0 and labels_np[index]==0:
-                tns.append(cens_np[index])
+                tns[-1].extend(cens_np[index])
         
         file_counter += 1
-        print("File Number {}".format(file_counter))
-        print("Saved {} false positives".format(counter))
-        print("There are {} fps, {} fns, {} tps, {} tns".format(len(fps),len(fns),len(tps),len(tns)))
-        print("-----------------------------------")
-        
+        print("{} --- acc is: {}, fps: {}, fns: {},tps: {},tns: {}".format(file_counter,acc,len(fps[-1]),len(fns[-1]),len(tps[-1]),len(tns[-1])))
 
-    
 def main():
     data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecordsTest")
     tf_data_files = os.listdir(data_dir)  
-    tf_test_set = tf_data_files
+    tf_test_set = tf_data_files[0:8]
     tf_test_paths = list(map(lambda file: os.path.join(data_dir,file),tf_test_set))
-    mine_fps(tf_test_paths)
+    test(tf_test_paths)
 
 if __name__=="__main__":
     main()    
