@@ -126,7 +126,8 @@ def inference(volumes,batch_size,is_training,mode=0):
         kernel = variable_with_weight_decay('weights',[3,3,3,256,512],0.0005,is_training)
         biases = variable_on_cpu('biases', [512], tf.constant_initializer(0.0))
         pre_activation = conv3d(pool3, kernel,1,1,1) + biases
-        pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
+        if mode==0:
+            pre_activation = tf.contrib.layers.batch_norm(pre_activation,center = True, scale = True, is_training=is_training, updates_collections = None, decay=0.9)
         conv4a = tf.nn.leaky_relu(pre_activation,name='conv4a')
         activation_summary(conv4a)
 
