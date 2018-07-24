@@ -8,18 +8,25 @@ import cv2
 import sys
 
 def make_annotation_images(mode):
+    '''
+    This function processes sub volumes from the volume images,using the 
+    prepared csv files containing centroid locations
+    to their respective paths.
+    Inputs:
+        mode: 0 processes LIDC positives, 1 processes LUNA positives
+    '''
 
-    src_dir = os.path.join(settings.PATIENTS_DIR,"labels")
+    src_dir = os.path.join(settings.CA_PATIENTS_DIR,"labels")
 
     if mode==0:
         ext = "*_annos_pos_lidc.csv"
-        dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"LIDC")
+        dst_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"LIDC")
     elif mode==1:
         ext = "*_annos_pos.csv"
-        dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"POS")
+        dst_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"POS")
       
     #patients = utils.load_patients_list()
-    patients = os.listdir(settings.LUNA_IMAGE_DIR)
+    patients = os.listdir(settings.CA_LUNA_IMAGE_DIR)
 
     for patient_index,patient in enumerate(patients):
         csv_dir = os.path.join(src_dir,patient) + '/'
@@ -52,6 +59,9 @@ def make_annotation_images(mode):
 
             if mode==0:
                 target_path = os.path.join(dst_dir,patient + "_" + str(anno_index) + "_" + str(malscore * malscore) + "_1_pos.png")
+                if malscore==4 or malscore==5:
+                    print("not one or two or three")
+                    continue
 
             elif mode==1:
                 target_path = os.path.join(dst_dir,patient + "_" + str(anno_index) + "_" + str(diam) + "_1_pos.png")
@@ -61,15 +71,22 @@ def make_annotation_images(mode):
         utils.print_tabbed([patient_index, patient, len(df_annos)], [5, 64, 8])
 
 def make_candidate_images(mode):
-
-    src_dir = os.path.join(settings.PATIENTS_DIR,"labels")
+    '''
+    This function processes sub volumes from the volume images,using the 
+    prepared csv files containing centroid locations
+    to their respective paths.
+    Inputs:
+        mode: 0 processes LUNA candidates, 1 processes EDGE random candidates 
+                                                    
+    '''
+    src_dir = os.path.join(settings.CA_PATIENTS_DIR,"labels")
 
     if mode==0:
         ext = "*_candidates_luna.csv"
-        dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"NEG")
+        dst_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"NEG")
     elif mode==1:
         ext = "*_candidates_edge.csv"
-        dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"EDGE")
+        dst_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"EDGE")
    
     patients = utils.load_patients_list()
 

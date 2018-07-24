@@ -15,6 +15,7 @@ import time
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
+
 import c3d
 import random
 import math
@@ -25,13 +26,13 @@ import visualize
 import utils
 import process_train
 
-MAX_STEPS = 250000
-NUM_GPUS = 5
-GPUS = ['/gpu:1','/gpu:2','/gpu:3','/gpu:4','/gpu:5']
-BATCH_SIZE = 100
+MAX_STEPS = 30000
+NUM_GPUS = 2
+GPUS = ['/gpu:1','/gpu:2']
+BATCH_SIZE = 125
 VOL_SHAPE = [32,32,32]
-TOT_EXAMPLES = 480000
-SHUFFLE_BATCH = 40000
+TOT_EXAMPLES = 22500
+SHUFFLE_BATCH = 22500
 EX_PER_RECORD = 2500
 
 def _parse_function(example_proto):
@@ -82,7 +83,7 @@ def average_gradients(tower_grads):
         averaged_grads.append(pair)
     return averaged_grads    
     
-def tower_loss(scope,volumes,labels,is_training,mode):
+def tower_loss(scope,volumes,labels,is_training,keep_prob):
     '''
     Compute the loss for a gpu tower
 
@@ -95,11 +96,11 @@ def tower_loss(scope,volumes,labels,is_training,mode):
     '''
     
     # build inference graph
-    logits = c3d.inference(volumes,BATCH_SIZE,is_training,mode=mode) 
+    logits,_ = c3d.inference(volumes,BATCH_SIZE,is_training,keep_prob=keep_prob) 
     
     
     # build loss section of graph and assemble total loss for current tower
-    _ = c3d.loss(logits,labels,is_training,mode) # return value would be significant in single gpu training
+    _ = c3d.loss(logits,labels,is_training) # return value would be significant in single gpu training
     
     if is_training == True:
         losses = tf.get_collection('losses',scope)
@@ -125,6 +126,7 @@ def tower_accuracy(labels,logits):
     Outputs:
         A tensor of shape [] containing classification error for input batch  
     '''
+    predictions = logits
     predictions = tf.sigmoid(logits)
     predictions = tf.round(predictions)
     predictions = tf.cast(predictions,dtype=tf.int32)
@@ -135,17 +137,26 @@ def tower_accuracy(labels,logits):
     tf.summary.scalar(mean_acc.op.name, mean_acc)
     return mean_acc
 
-def train(train_files,val_files,mode,load_check = False):
+def train(train_files,val_files,load_check = False,mode=0):
     '''
     Train the model for a number of steps
     '''
-    train_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","mal")
-    load_dir = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints","mal")
-    val_path = os.path.join(settings.TRAIN_DATA_DIR,"Val","mal","validation.p")
+
+    folder="ROI"
+    if mode==1:
+        folder="NDSB"
+    train_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"Checkpoints",folder)
+    load_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"Checkpoints",folder)
+    val_path = os.path.join(settings.CA_TRAIN_DATA_DIR,"Val",folder,"validation.p")
+
+
     with tf.Graph().as_default(), tf.device('/cpu:0'):
         # create a var to count the num of train() calls - number of batches run * num of gpus
         global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0),   
                                        trainable=False)
+        # for dropout
+        keep_prob = tf.placeholder(dtype=tf.float32)
+
         # create adam optimizer
         opt = tf.train.AdamOptimizer(c3d.LEARNING_RATE, epsilon = 1e-05)
         
@@ -173,7 +184,7 @@ def train(train_files,val_files,mode,load_check = False):
                     with tf.name_scope('%s_%d' % ('tower', i)) as scope:
                         # get one batch for the GPU
                         volume_batch, label_batch = iterator.get_next()
-                        loss,logits = tower_loss(scope, volume_batch, label_batch, is_training,mode)
+                        loss,logits = tower_loss(scope, volume_batch, label_batch, is_training,keep_prob)
                         acc = tower_accuracy(label_batch,logits) 
                         # Reuse variables for the next tower.
                         tf.get_variable_scope().reuse_variables()
@@ -193,7 +204,7 @@ def train(train_files,val_files,mode,load_check = False):
                 with tf.name_scope('%s' % ('val')) as scope: 
                     tf.get_variable_scope().reuse_variables()
                     val_batch, val_labels = iterator_val.get_next()
-                    val_loss,val_logits = tower_loss(scope, val_batch, val_labels, is_training,mode)
+                    val_loss,val_logits = tower_loss(scope, val_batch, val_labels, is_training,keep_prob)
                     val_acc = tower_accuracy(val_labels,val_logits)    
         # Add histograms for gradients.
         for grad, var in averaged_grads:
@@ -237,7 +248,7 @@ def train(train_files,val_files,mode,load_check = False):
             saver.restore(sess, tf.train.latest_checkpoint(load_dir)) 
         for step in xrange(MAX_STEPS):
             start_time = time.time()
-            _, loss_value,acc_values,summary_str = sess.run([train_op, loss, tower_accs, summary_op],feed_dict={is_training:True})
+            _, loss_value,acc_values,summary_str = sess.run([train_op, loss, tower_accs, summary_op],feed_dict={is_training:True,keep_prob:0.6})
             duration = time.time() - start_time
             acc_list = acc_values.tolist()
             total_accs.extend(acc_list)
@@ -285,7 +296,7 @@ def train(train_files,val_files,mode,load_check = False):
                 print('validating...')
                 while True:
                     try:
-                        valid_loss,valid_acc = sess.run([val_loss,val_acc],feed_dict={is_training:False})
+                        valid_loss,valid_acc = sess.run([val_loss,val_acc],feed_dict={is_training:False,keep_prob:1.0})
                         all_accs.append(valid_acc)
                         all_losses.append(valid_loss)
                     except tf.errors.OutOfRangeError:
@@ -306,22 +317,23 @@ def train(train_files,val_files,mode,load_check = False):
                 with open(val_path,"wb") as openfile:
                     pickle.dump({'accs':total_val_accs,'loss':total_val_loss},openfile) 
 
-def main(argv=None):  
-    mode=1
-    #process_train.main_create(mode)
-    if mode==0:
-        data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords","roi")
-    elif mode==1:
-        data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords","mal")    
+def main(mode):  
+
+    folder = "ROI"
+    if mode==1:
+        folder = "NDSB"
+
+    data_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"TFRecords",folder)
+ 
     data_files = os.listdir(data_dir)
-    training_set = data_files[0:192]
+    training_set = data_files[0:9]
     training_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),training_set))
-    validation_set = data_files[192:]
+    validation_set = data_files[9:]
     validation_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),validation_set))
-    train(training_paths,validation_paths,mode,load_check=False)
+    train(training_paths,validation_paths,load_check=False,mode=mode)
 
 
 if __name__ == '__main__':
-    tf.app.run()    
+    main(mode=1)   
   
                           

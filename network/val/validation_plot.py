@@ -1,14 +1,14 @@
 import pickle
 from matplotlib import pyplot as plt
 
-VAL_FILE = "/home/alyb/ConvNetDiagnosis/network/val/validation.p"
+VAL_FILE = "/media/ubuntu/cryptscratch/scratch/alyb/Data/Cancer/TrainData/Val/roi/validation.p"
 
 def plot_graph(path):
     with open(path,'rb') as openfile:
         val = pickle.load(openfile)
-    loss = val["loss"]
+    loss = val["accs"]
     plt.plot(loss)
-    plt.ylabel("loss")
+    plt.ylabel("acc")
     plt.xlabel("iteration group")
     plt.show()    
 

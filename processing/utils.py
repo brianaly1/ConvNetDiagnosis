@@ -10,11 +10,17 @@ from skimage.measure import label, regionprops
 from skimage.morphology import disk, dilation, binary_erosion, binary_closing
 from skimage.filters import roberts, sobel
 from collections import defaultdict
-from scipy import ndimage as ndi
+import scipy
 import pandas
+import pydicom
 
 def load_patients_list():
-    LUNA_DIR = settings.LUNA_SRC_DIR
+    '''
+    Luna16 data is provided as 10 seperate subset folders. 
+    This function simply returns a dictionary with all patients 
+    as keys, and path to the raw files as values.
+    ''' 
+    LUNA_DIR = settings.CA_LUNA_SRC_DIR
     subsets = os.listdir(LUNA_DIR)
     patients = {}
     for subset in subsets:
@@ -24,12 +30,19 @@ def load_patients_list():
         for patient in subset_files:
             series_uid = patient[:-4]
             path = os.path.join(subset_path,patient)
-            patients[series_uid] = path
-        
+            patients[series_uid] = path      
     return patients
 
-def load_patient_images(uid, extension):
-    dir_path = os.path.join(settings.LUNA_IMAGE_DIR,uid)
+def load_ndsb_patients():
+    patients = {}
+    NDSB_CSV = os.path.join(settings.CA_PATIENTS_DIR,"annotations","stage1_labels.csv")
+    df_node = pandas.read_csv(NDSB_CSV)
+    for index,row in df_node.iterrows():
+        patients[row["id"]] = row["cancer"]
+    return patients
+
+def load_patient_images(uid, extension, img_dir=settings.CA_LUNA_IMG_DIR):
+    dir_path = os.path.join(img_dir,uid)
     img_names = os.listdir(dir_path)
     ext_len = int(len(extension) * -1)
     img_paths = [os.path.join(dir_path,img_name) for img_name in img_names if img_name[ext_len:]==extension]
@@ -45,8 +58,67 @@ def get_mal_from_name(file_name):
         mal = int(file_name[-11:-10])
     else:
         mal = int(file_name[-12:-10])
-
+    mal = int(math.sqrt(mal))
     return mal
+
+
+def load_scan(path): 
+    #source:GuidoZuidhof link:https://www.kaggle.com/gzuidhof/full-preprocessing-tutorial/notebook
+    '''
+    load scan volume from dicom files
+    inputs: path to dicom file
+    outputs: list of slices in a scan volume
+    '''
+    
+    slices = [pydicom.read_file(os.path.join(path,s)) for s in os.listdir(path) if s[-4:]==".dcm"] 
+
+    try:
+        slices.sort(key = lambda x: float(x.ImagePositionPatient[2]))
+        slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
+    except:
+        slices.sort(key = lambda x: float(x.SliceLocation))
+        slice_thickness = np.abs(slices[0].SliceLocation - slices[1].SliceLocation)
+        
+    for s in slices:
+        s.SliceThickness = slice_thickness
+        
+    return slices
+
+def normalize(image):
+
+    MIN_BOUND = -1000.0
+    MAX_BOUND = 400.0
+    image = (image - MIN_BOUND) / (MAX_BOUND - MIN_BOUND)
+    image[image > 1] = 1.
+    image[image < 0] = 0.
+    return image
+
+def get_pixels(slices):
+    '''
+    convert voxel values to Housenfeild units
+    normalize and threshold 
+    inputs: slices (if dicom is used), image (if mhd files are used), dicom=1 if dicom is used
+    outputs: normalized volume
+    '''
+    volume_slices = [s for s in slices]
+    raw_image = np.stack([s.pixel_array for s in volume_slices])
+    raw_image = raw_image.astype(np.int16)
+    raw_image[raw_image == -2000] = 0
+    # Convert to Hounsfield units (HU)
+    for slice_number in range(len(volume_slices)):
+        
+        intercept = volume_slices[slice_number].RescaleIntercept
+        slope = volume_slices[slice_number].RescaleSlope
+        
+        if slope != 1:
+            raw_image[slice_number] = slope * raw_image[slice_number].astype(np.float64)
+            raw_image[slice_number] = raw_image[slice_number].astype(np.int16)
+            
+        raw_image[slice_number] += np.int16(intercept)
+    
+    raw_image = np.array(raw_image,dtype=np.int16)
+    
+    return raw_image
 
 def get_patient_nodules(patient):
     '''
@@ -59,7 +131,7 @@ def get_patient_nodules(patient):
 
     nodules = []
 
-    labels_path = os.path.join(settings.PATIENTS_DIR,"labels")
+    labels_path = os.path.join(settings.CA_PATIENTS_DIR,"labels")
     patient_labels = os.path.join(labels_path,patient)
 
     if os.path.exists(patient_labels) == False:
@@ -121,6 +193,17 @@ def rescale_patient_images(images_zyx, org_spacing_xyz, target_voxel_mm, is_mask
 
     return res
 
+def resample_images(image, old_spacing, new_spacing=1.0):
+
+    spacing = np.array(old_spacing)
+    resize_factor = spacing / new_spacing
+    new_real_shape = image.shape * resize_factor
+    new_shape = np.round(new_real_shape)
+    real_resize_factor = new_shape / image.shape
+    new_spacing = spacing / real_resize_factor
+    image = scipy.ndimage.interpolation.zoom(image, real_resize_factor)
+    return image
+
 
 def get_segmented_lungs(im, plot=False):
     # Step 1: Convert into a binary image.
@@ -147,7 +230,7 @@ def get_segmented_lungs(im, plot=False):
     binary = binary_closing(binary, selem)
     # Step 7: Fill in the small holes inside the binary mask of lungs.
     edges = roberts(binary)
-    binary = ndi.binary_fill_holes(edges)
+    binary = scipy.ndimage.binary_fill_holes(edges)
     # Step 8: Superimpose the binary mask on the input image.
     get_high_vals = binary == 0
     im[get_high_vals] = -2000
@@ -228,7 +311,7 @@ def print_tabbed(value_list, justifications=None, map_id=None, show_map_idx=True
         map_entries.append(line)
     print(line)
 
-def prepare_example(volume,vox_size,translations,category,example,mode): 
+def prepare_example(volume,vox_size,translations,category,example): 
     '''
     Extract example from larger volume, optionally apply random translations to examples 
     for augmentation
@@ -249,18 +332,10 @@ def prepare_example(volume,vox_size,translations,category,example,mode):
     vox_size_np = np.array(vox_size)
     translations = int(translations)
 
-    if category == "EDGE":
+    if category in {"EDGE","NEG","FP","FP2","NDSBNEG1","NDSBNEG2"}:
         label = 0
-    elif category == "LIDC":
+    elif category in {"LIDC1","LIDC2","LIDC3","LIDC4","LIDC5","POS","NDSBPOS1","NDSBPOS2"}:
         label = 1
-        if mode==1:
-            label = get_mal_from_name(example)
-    elif category == "POS":
-        label = 1
-    elif category == "NEG":
-        label = 0
-    elif category == "FP":
-        label = 0
 
     # extract sub volume
     vol_size = np.array(np.shape(volume_np)) 
@@ -275,7 +350,7 @@ def prepare_example(volume,vox_size,translations,category,example,mode):
     
     #augment with random translations 
     if translations!=1:
-        max_shift = min(margin)//2
+        max_shift = 10
         deltas = np.random.randint(low=-max_shift,high=max_shift,size=(translations-1,3)) 
         for translation in deltas:
             trans_np = translation
@@ -292,7 +367,7 @@ def prepare_example(volume,vox_size,translations,category,example,mode):
 
     return sub_vols,labels
 
-def partition_volume(uid, centroids, sub_vol_shape, mag=1): 
+def partition_volume(uid, sub_vol_shape, mag=1, centroids=None): 
     '''
     Partition a volume into relevant sub volumes, and generate labels for each
     Inputs:
@@ -303,13 +378,18 @@ def partition_volume(uid, centroids, sub_vol_shape, mag=1):
         sub_vol_centroids: centroids of the individual sub volumes
         labels: label of each centroid
     '''
+    if centroids==None:
+        img_dir = settings.CA_NDSB_IMAGE_DIR
+    else:
+        img_dir = settings.CA_LUNA_IMAGE_DIR
 
-    patient_img = load_patient_images(uid, extension = "_i.png")
-    patient_mask = load_patient_images(uid, extension = "_m.png")
+    patient_img = load_patient_images(uid, extension = "_i.png",img_dir = img_dir)
+    patient_mask = load_patient_images(uid, extension = "_m.png",img_dir = img_dir)
 
     if mag!=1:
         patient_img = rescale_patient_images(patient_img, (1,1,1), mag, is_mask_image=False)
         patient_mask = rescale_patient_images(patient_mask, (1,1,1), mag, is_mask_image=True)
+        print("Image shape after rescaling: {}".format(patient_img.shape))
 
     vol_shape = np.array(np.shape(patient_img))
     sub_vol_shape = np.array(sub_vol_shape)
@@ -330,12 +410,12 @@ def partition_volume(uid, centroids, sub_vol_shape, mag=1):
                 centroid = [j,i,k]
                 centroid_np = np.array(centroid)
                 label = 0
-
-                for nodule in centroids:
-                    nodule_np = np.array(nodule)
-                    if np.all(np.absolute(centroid_np-nodule_np)<sub_vol_shape/2) == True:
-                        label = 1 
-                        break
+                if centroids != None:
+                    for nodule in centroids:
+                        nodule_np = np.array(nodule)
+                        if np.all(np.absolute(centroid_np-nodule_np)<sub_vol_shape/2) == True:
+                            label = 1 
+                            break
 
                 sub_vol = get_cube_from_img(patient_img, centroid[0], centroid[1], centroid[2], sub_vol_shape[0]).astype(np.float64)  
                 masked_sub_vol = get_cube_from_img(patient_mask, centroid[0], centroid[1], centroid[2], sub_vol_shape[0]).astype(np.float64)   

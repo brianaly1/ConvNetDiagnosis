@@ -13,17 +13,28 @@ def _int64_feature(value):
 def _bytes_feature(value):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
-def saveTf(sub_volumes,centroids,labels,file_name):
+def saveTf(sub_volumes,centroids,labels,file_name,mode,mag=1):
     '''
     Save TFRecord files with data and labels
     Inputs:
         sub_volumes: np array of voxels size [num_examples, height, rows, columns]
         centroids: np array of centers of each sub volume wrt to the overall patient volume
         labels:  np array of binary labels of size [num_examples]
-        file_index: index used to give each file a unique name
+        file_name: index used to give each file a unique name
+        mode: 0 for LUNA, 1 for NDSB
     '''
 
-    save_path = os.path.join(settings.TRAIN_DATA_DIR,"TFRecordsTest",file_name+".tfrecords")
+    save_path = os.path.join(settings.CA_TRAIN_DATA_DIR,"TFRecordsTest")
+
+    if mode==0:
+        save_path = os.path.join(save_path,"LUNA",file_name+".tfrecords")
+    elif mode==1:
+        val1_files = set(os.listdir(os.path.join(save_path,"NDSBVAL","1")))
+        if (file_name+".tfrecords") in val1_files:
+            save_path = os.path.join(save_path,"NDSBVAL",str(mag),file_name+".tfrecords")
+        else:
+            save_path = os.path.join(save_path,"NDSB",str(mag),file_name+".tfrecords")
+
     num_examples = np.shape(sub_volumes)[0]
     assert num_examples == np.shape(labels)[0] , "volume array size does not match labels array size"
 
@@ -40,16 +51,17 @@ def saveTf(sub_volumes,centroids,labels,file_name):
                                                                              }))
             writer.write(example.SerializeToString())
 
-def save_patient_test_data(patient,sub_vol_shape):
+def save_luna_test_data(patient,sub_vol_shape):
     '''
     Generate TFRecord files, one per patient, containing all relevant sub volumes in the volume
     Inputs:
         patient: patient uid
+        sub_vol_shape: desired sub volume shape
     '''
 
     nodules = utils.get_patient_nodules(patient)
    
-    sub_vols,centroids,labels = utils.partition_volume(patient, nodules, sub_vol_shape, mag=1)
+    sub_vols,centroids,labels = utils.partition_volume(patient, sub_vol_shape, mag=1, centroids=nodules)
 
     sub_vols_np = np.array(sub_vols)
     centroids_np = np.array(centroids)
@@ -59,19 +71,38 @@ def save_patient_test_data(patient,sub_vol_shape):
     pos_centroids = centroids_np[pos_indices]
 
     print("processing patient: {}, with {} subvolumes, {} nodules, and {} positive labels".format(patient,len(sub_vols),len(nodules),len(pos_indices[0])))
-    saveTf(sub_vols_np,centroids_np,labels_np,patient)
+    saveTf(sub_vols_np,centroids_np,labels_np,patient,mode=0)
     return len(nodules),len(pos_indices[0]) 
 
-def main():
+def save_ndsb_test_data(patient,sub_vol_shape,label,mag):
+    '''
+    Generate TFRecord files, one per patient, containing all relevant sub volumes in the volume
+    Inputs:
+        patient: patient uid
+        sub_vol_shape: desired sub volume shape
+        label: label for the given patient (cancer/no)
+    '''
 
-    labels_dir = os.path.join(settings.PATIENTS_DIR,"labels")
-    patients_list = os.listdir(labels_dir)
+    sub_vols,centroids,_ = utils.partition_volume(patient, sub_vol_shape, mag=mag, centroids=None)
+    labels = [label]*len(sub_vols)
+    sub_vols_np = np.array(sub_vols)
+    centroids_np = np.array(centroids)
+    labels_np = np.array(labels)
+
+    print("processing patient: {}, with {} subvolumes".format(patient,len(sub_vols)))
+    saveTf(sub_vols_np,centroids_np,labels_np,patient,mode=1,mag=mag)
+    
+
+def luna_main():
+
+    labels_dir = os.path.join(settings.CA_PATIENTS_DIR,"labels")
+    patients = os.listdir(labels_dir)
     sub_vol_shape = settings.SUB_VOL_SHAPE
     tot_nods = 0
     tot_pos = 0
     for patient in patients_list:
         try:
-            nods,pos = save_patient_test_data(patient,sub_vol_shape)
+            nods,pos = save_luna_test_data(patient,sub_vol_shape)
             tot_nods+=nods
             tot_pos+=pos
             print("Total nodules = {}, total positive labels = {}".format(tot_nods,tot_pos))
@@ -82,9 +113,21 @@ def main():
         except:
             print("Unknown error with patient {}".format(patient))
     
+def ndsb_main(mag=1):
 
+    patients = utils.load_ndsb_patients()
+    sub_vol_shape = settings.SUB_VOL_SHAPE
+    for patient in patients:
+        try:
+            save_ndsb_test_data(patient,sub_vol_shape,patients[patient],mag=mag)
+        except KeyboardInterrupt:
+            print("Interrupted")
+            sys.exit()
+        except Exception as e:
+            print("Error with patient {} : {}".format(patient,e))
+    
 if __name__=="__main__":
-    main()
+    ndsb_main(mag=2)
     
 
      

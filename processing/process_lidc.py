@@ -8,7 +8,16 @@ import pandas
 import SimpleITK
 from bs4 import BeautifulSoup
 
-def load_lidc_xml(patients, xml_path, agreement_threshold=0):
+def process_lidc_xml(patients, xml_path, agreement_threshold=0):
+    '''
+    This function parses an xml file from the LIDC annotations, and mines
+    all nodule locations within the file. 
+    Inputs: 
+        patients:
+        xml_path: path to file
+        agreement_threshold:
+    ''' 
+
     pos_lines = []
     neg_lines = []
     extended_lines = []
@@ -22,11 +31,11 @@ def load_lidc_xml(patients, xml_path, agreement_threshold=0):
         return None, None, None
 
     patient_id = xml.LidcReadMessage.ResponseHeader.SeriesInstanceUid.text
-    
+
     if patient_id not in patients:
         return None, None, None
 
-    print(patient_id)
+    #print(patient_id)
 
     image_path = patients[patient_id]
     itk_img = SimpleITK.ReadImage(image_path)
@@ -38,7 +47,7 @@ def load_lidc_xml(patients, xml_path, agreement_threshold=0):
 
     reading_sessions = xml.LidcReadMessage.find_all("readingSession")
     for reading_session in reading_sessions:
-        # print("Sesion")
+        #print("Session")
         nodules = reading_session.find_all("unblindedReadNodule")
         for nodule in nodules:
             nodule_id = nodule.noduleID.text
@@ -81,10 +90,10 @@ def load_lidc_xml(patients, xml_path, agreement_threshold=0):
             diameter_perc = round(max(x_diameter / img_array.shape[2], y_diameter / img_array.shape[1]), 4)
 
             if nodule.characteristics is None:
-                print("!!!!Nodule:", nodule_id, " has no charecteristics")
+                #print("!!!!Nodule:", nodule_id, " has no charecteristics")
                 continue
             if nodule.characteristics.malignancy is None:
-                print("!!!!Nodule:", nodule_id, " has no malignacy")
+                #print("!!!!Nodule:", nodule_id, " has no malignacy")
                 continue
 
             malignacy = nodule.characteristics.malignancy.text
@@ -143,12 +152,18 @@ def load_lidc_xml(patients, xml_path, agreement_threshold=0):
 
         pos_lines = filtered_lines
 
+    dst_dir = os.path.join(settings.CA_LABELS_DIR,patient_id)
+    if not os.path.exists(dst_dir):
+        os.mkdir(dst_dir)
+
     df_annos = pandas.DataFrame(pos_lines, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
-    save_path = os.path.join(settings.PATIENTS_DIR,"labels",patient_id + "_annos_pos_lidc.csv")
+    save_path = os.path.join(dst_dir,patient_id + "_annos_pos_lidc.csv")
     df_annos.to_csv(save_path, index=False)
+
     df_neg_annos = pandas.DataFrame(neg_lines, columns=["anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore"])
-    save_path = os.path.join(settings.PATIENTS_DIR,"labels",patient_id + "_annos_neg_lidc.csv")
+    save_path = os.path.join(dst_dir,patient_id + "_annos_neg_lidc.csv")
     df_neg_annos.to_csv(save_path, index=False)
+
     return pos_lines, neg_lines, extended_lines
 
 
@@ -157,31 +172,32 @@ def process_lidc_annotations(xml_dir, agreement_threshold=0):
     file_no = 0
     pos_count = 0
     neg_count = 0
-    all_lines = []
     patients = utils.load_patients_list()
+
     for anno_dir in os.listdir(xml_dir):
         anno_subdir = os.path.join(xml_dir,anno_dir)
         xml_paths = [x for x in os.listdir(anno_subdir) if x[-4:] == ".xml"]
         for xml_file in xml_paths:
-            xml_path = os.path.join(anno_subdir,xml_file)
-            print(file_no, ": ",  xml_path)
-            pos, neg, extended = load_lidc_xml(patients, xml_path, agreement_threshold)
-            if pos==None:
-                continue
-            pos_count += len(pos)
-            neg_count += len(neg)
-            print("Pos: ", pos_count, " Neg: ", neg_count)
-            file_no += 1
-            all_lines += extended
+            try:
+                xml_path = os.path.join(anno_subdir,xml_file)
+                #print(file_no, ": ",  xml_path)
+                pos, neg, extended = process_lidc_xml(patients, xml_path, agreement_threshold)
+                if pos==None:
+                    continue
+                pos_count += len(pos)
+                neg_count += len(neg)
+                #print("Pos: ", pos_count, " Neg: ", neg_count)
+                file_no += 1
+            except KeyboardInterrupt:
+                print("Program Interrupted")
+                sys.exit()
+            except Exception as e:
+                print("Error: {}".format(e))
 
-
-    df_annos = pandas.DataFrame(all_lines, columns=["patient_id", "anno_index", "coord_x", "coord_y", "coord_z", "diameter", "malscore", "sphericiy", "margin", "spiculation", "texture", "calcification", "internal_structure", "lobulation", "subtlety"])
-    save_path = os.path.join(settings.BASE_DATA_DIR,"CSVFILES","lidc_annotations.csv")
-    df_annos.to_csv(save_path, index=False)
 
 def main():
-    xml_dir = os.path.join(settings.BASE_DATA_DIR,"LIDC")
-    process_lidc_annotations(xml_dir, agreement_threshold=0)
+    path = settings.CA_LIDC_SRC_DIR
+    process_lidc_annotations(path, agreement_threshold=0)
 
 if __name__=="__main__":
     main()    

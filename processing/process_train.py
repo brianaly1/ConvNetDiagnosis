@@ -26,11 +26,11 @@ def saveTf(volumes,labels,file_index,mode):
         file_index: each file needs a unique name, index achieves this
     '''
 
-    folder = "roi"
-    if mode == 1:
-        folder = "mal"
+    folder = "ROI"
+    if mode==1:
+        folder = "NDSB"
 
-    save_path = os.path.join(settings.TRAIN_DATA_DIR,"TFRecords",folder,str(file_index)+".tfrecords")
+    save_path = os.path.join(settings.CA_TRAIN_DATA_DIR,"TFRecords",folder,str(file_index)+".tfrecords")
     num_examples = np.shape(volumes)[0]
     assert num_examples == np.shape(labels)[0] , "volume array size does not match labels array size"
 
@@ -45,49 +45,42 @@ def saveTf(volumes,labels,file_index,mode):
                                                                              }))
             writer.write(example.SerializeToString())
         
-def create_dataset(categories,translations,total_count,vox_size,mode):
+def create_dataset(categories,translations,total_count,count_per_tfr,vox_size,mode):
     '''
-    Load data from the serialized files and chunk into mini batches
-    to be saved as TFRecord files
+    Load png files and chunk into mini batches to be saved as TFRecord files
 
     Inputs:
-        categories: list of data folders to use
-        total_count: num of examples in a tf record
+        categories: list of data categories to use
+        translations: list of number of desired translations per category
+        total_count: num of examples to be saved in a tf record
+        vox_size: desired training set sub volume size        
     '''
     
-    base_path = settings.TRAIN_DATA_DIR
+    base_path = os.path.join(settings.CA_TRAIN_DATA_DIR,"SubVols")
 
-    paths = []
-    file_names = []
-    count_per_tf = [1040,640,2360,700,260]
+    paths = [os.path.join(base_path,cat) for cat in categories]
+    file_names = [os.listdir(path) for path in paths]
 
-    if mode==1:
-        count_per_tf = [560,1940]
-
-    for index,category in enumerate(categories):
-        cat_path = os.path.join(base_path,category)
-        paths.append(cat_path)
-        file_names.append(os.listdir(cat_path))
-    
     file_counter = 0
+
     while True:
         try:
             mini_batch = []
             mb_labels = []
             for index,category in enumerate(categories):
-                for i in range(0,count_per_tf[index],translations[index]):
+                for i in range(0,count_per_tfr[index],translations[index]):
                     example = file_names[index].pop()
                     path = os.path.join(paths[index],example)
-                    if category == "FP":
+                    if category in {"FP","FP2","NDSBNEG1","NDSBPOS1","NDSBNEG2","NDSBPOS2"}:
                         volume = utils.load_cube_img(path, 4, 8, 32)
-                    else:
+                    elif category in {"EDGE","NEG","LIDC1","LIDC2","LIDC3","LIDC4","LIDC5","POS"}:
                         volume = utils.load_cube_img(path, 8, 8, 64)
-                    sub_volumes,sv_labels = utils.prepare_example(volume,vox_size,translations[index],category,example,mode)
+                    sub_volumes,sv_labels = utils.prepare_example(volume,vox_size,translations[index],category,example)
                     mini_batch.extend(sub_volumes)
                     mb_labels.extend(sv_labels)
 
             mini_batch,mb_labels = _shuffle(np.array(mini_batch),np.array(mb_labels))
-            saveTf(mini_batch,mb_labels,file_counter,mode)
+            saveTf(mini_batch,mb_labels,file_counter,mode=mode)
             #print(len(mini_batch))
             file_counter += 1
         except IndexError:
@@ -97,16 +90,24 @@ def create_dataset(categories,translations,total_count,vox_size,mode):
             print("keyboard interrupt")
             break
 
-def main_create(mode=0):
-    categories = ["EDGE","LIDC","NEG","POS","FP"] #LIDC 4 and 5 only
-    translations = [1,80,1,100,1]
-    if mode == 1:
-        categories = ["LIDC","NEG"]
-        translations = [20,1]
+def roi_main():
+    categories = ["EDGE","LIDC45","NEG","POS","FP","FP2"] 
+    translations = [1,80,1,100,1,1]
     total_count = 5000
+    count_per_tfr = [960,640,2080,700,260,360] #number of each category included in each tf file
     vox_size = (32,32,32)
-    create_dataset(categories,translations,total_count,vox_size,mode)
+    create_dataset(categories,translations,total_count,count_per_tfr,vox_size,mode=0)
+
+def ndsb_main():
+    categories = ["NDSBNEG1","NDSBPOS1","NDSBNEG2","NDSBPOS2"]
+    translations = [1,1,1,1]
+    total_count = 2500
+    count_per_tfr = [1340,755,230,175] 
+    vox_size = (32,32,32)
+    create_dataset(categories,translations,total_count,count_per_tfr,vox_size,mode=1)
+    
+    
 
 if __name__=="__main__":
-    main_create(mode=0)
+    ndsb_main()
 

@@ -11,6 +11,8 @@ sys.path.insert(0, '/home/alyb/ConvNetDiagnosis/processing/')
 import settings
 import utils
 import visualize
+import pandas
+import c3d_train
 
 NUM_GPUS = 1
 GPUS = ["/gpu:7"]
@@ -43,16 +45,16 @@ def _parse_function(example_proto):
     
     return volume,label,center_1d
 
-def predict(files,mode): #load graph...
+def predict(files): #load graph...
 
-    CHECKPOINT = os.path.join(settings.TRAIN_DATA_DIR,"Checkpoints")
-    if mode==0:
-        CHECKPOINT = os.path.join(CHECKPOINT,"roi")
-    elif mode==1:
-        CHECKPOINT = os.path.join(CHECKPOINT,"mal")    
+    CHECKPOINT = os.path.join(settings.CA_TRAIN_DATA_DIR,"Checkpoints","roi")
+
     with tf.Graph().as_default(), tf.device('/cpu:0'):
 
         filenames = tf.placeholder(tf.string, shape=[None])
+
+        # for dropout
+        keep_prob = tf.placeholder(dtype=tf.float32)
 
         dataset = tf.data.TFRecordDataset(filenames)
         dataset = dataset.map(_parse_function)
@@ -63,10 +65,9 @@ def predict(files,mode): #load graph...
             with tf.device(GPUS[0]):
                 with tf.name_scope('infer') as scope: 
                     volume_batch,labels,centers = iterator.get_next()
-                    logits = c3d.inference(volume_batch,BATCH_SIZE,tf.constant(False,dtype=tf.bool),mode)      
+                    logits,_ = c3d.inference(volume_batch,BATCH_SIZE,tf.constant(False,dtype=tf.bool),keep_prob=keep_prob)  
+                    predictions = logits    
                     predictions = tf.sigmoid(logits)
-                    #predictions = tf.round(predictions)
-                    #predictions = tf.cast(predictions,dtype=tf.int32)
 
         saver = tf.train.Saver()
         sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True,log_device_placement=False))
@@ -80,7 +81,7 @@ def predict(files,mode): #load graph...
 
         while True:
             try:
-                pred_vals,label_vals,vol_vals,cen_vals = sess.run([predictions,labels,volume_batch,centers])
+                pred_vals,label_vals,vol_vals,cen_vals = sess.run([predictions,labels,volume_batch,centers],feed_dict={keep_prob:1.0})
                 all_predictions.extend(pred_vals)
                 all_labels.extend(label_vals)
                 all_volumes.extend(vol_vals)
@@ -99,7 +100,7 @@ def predict(files,mode): #load graph...
 
     return(all_predictions,all_labels,all_volumes,all_cens)
 
-def test(test_paths,mode=0,mine_fps=0):
+def test_roi(test_paths):
 
     fps = [] 
     fns = []
@@ -110,44 +111,111 @@ def test(test_paths,mode=0,mine_fps=0):
 
     for path in test_paths:
 
-        fp_counter = 0
+        uid = path.split('/')[-1][:-10]
+        cat_names = ["FPS","FNS","TPS","NODS"]
+        res_dir = os.path.join(settings.CA_TEST_RES_DIR,"LUNA",uid)
+        if not os.path.exists(res_dir):
+            os.mkdir(res_dir)
+        sub_dirs = [os.path.join(res_dir,x) + "/" for x in cat_names[0:-1]]
+        [os.mkdir(sub_dir) for sub_dir in sub_dirs if not os.path.exists(sub_dir)]
+        
+        counters = [0,0,0]
 
         fps.append([])
         fns.append([])
         tps.append([])
         tns.append([])
 
-        predictions_np,labels_np,volumes_np,cens_np = predict([path],mode=mode)
+        predictions_np,labels_np,volumes_np,cens_np = predict([path])
         predictions_np[predictions_np > settings.THRESHOLD] = 1
         predictions_np[predictions_np <= settings.THRESHOLD] = 0
         predictions_np = predictions_np.astype(np.int32)
         acc = np.mean((predictions_np == labels_np).astype(np.float32)) 
-        uid = path.split('/')[-1][:-10]
-        dst_dir = os.path.join(settings.TRAIN_DATA_DIR,"FP")
         for index in range(np.shape(labels_np)[0]):
-            target_path = os.path.join(dst_dir,uid + "_" + str(fp_counter) + "_0_" + "fp.png")
+            cen = cens_np[index].tolist()
+            volume = np.squeeze(volumes_np[index])
             if predictions_np[index] == 1 and labels_np[index]==0:
-                fps[-1].extend(cens_np[index])
-                if mine_fps:
-                    volume = np.squeeze(volumes_np[index])
-                    utils.save_cube_img(target_path, volume*255, 4, 8)
-                    fp_counter+=1
+                target_path = os.path.join(sub_dirs[0],uid + "_" + str(counters[0]) + "_0_" + "fp.png")
+                fps[-1].append(cen)
+                utils.save_cube_img(target_path, volume*255, 4, 8)
+                counters[0]+=1
             elif predictions_np[index] == 0 and labels_np[index]==1:
-                fns[-1].extend(cens_np[index])
+                target_path = os.path.join(sub_dirs[1],uid + "_" + str(counters[1]) + "_1_" + "fn.png")
+                target_path = os.path.join(settings.CA_TRAIN_DATA_DIR,"FN",uid+"_"+str(counters[1]) + "_1_" + "fn.png")
+                fns[-1].append(cen)
+                utils.save_cube_img(target_path, volume*255, 4, 8)
+                counters[1]+=1
             elif predictions_np[index] == 1 and labels_np[index]==1:
-                tps[-1].extend(cens_np[index])
+                target_path = os.path.join(sub_dirs[2],uid + "_" + str(counters[1]) + "_1_" + "tp.png")
+                tps[-1].append(cen)
+                utils.save_cube_img(target_path, volume*255, 4, 8)
+                counters[2]+=1
             elif predictions_np[index] == 0 and labels_np[index]==0:
-                tns[-1].extend(cens_np[index])
+                tns[-1].append(cen)
         
         file_counter += 1
+        
         print("{} --- acc is: {}, fps: {}, fns: {},tps: {},tns: {}".format(file_counter,acc,len(fps[-1]),len(fns[-1]),len(tps[-1]),len(tns[-1])))
+        print("TP locations are: ")
+        print(tps[-1])
+        print("FP locations are: ")
+        print(fps[-1])
+        print("FN locations are: ")
+        print(fns[-1])
+        nods = [utils.get_patient_nodules(uid)]
+        print("Nodule locations:: {}".format(nods))
+        print("------------------------------------------------------------------------------------------")
 
-def main():
-    data_dir = os.path.join(settings.TRAIN_DATA_DIR,"TFRecordsTest")
+        for ind,cat in enumerate([fps[-1],fns[-1],tps[-1],nods[-1]]):
+            lines = [[index,cen[0],cen[1],cen[2]] for index,cen in enumerate(cat)]
+            df_annos = pandas.DataFrame(lines, columns=["anno_index", "coord_x", "coord_y", "coord_z"])
+            save_path = os.path.join(res_dir,uid + "_" + cat_names[ind] + "_annos.csv")
+            df_annos.to_csv(save_path, index=False)
+        visualize.view_candidates(path,fps[-1])
+
+
+def test_cancer(files,mag=1):
+
+    cat_names = ["NDSBNEG"+str(mag),"NDSBPOS"+str(mag)] 
+
+    save_dirs = [os.path.join(settings.CA_TRAIN_DATA_DIR,cat) for cat in cat_names]
+    [os.mkdir(dir_name) for dir_name in save_dirs if not os.path.exists(dir_name)]
+
+    file_count = 0
+    count = 0
+
+    for path in files:
+        
+        try:
+            uid = path.split('/')[-1][:-10]
+
+            predictions_np,labels_np,volumes_np,cens_np = predict([path])
+            predictions_np[predictions_np > settings.THRESHOLD] = 1
+            predictions_np[predictions_np <= settings.THRESHOLD] = 0
+            predictions_np = predictions_np.astype(np.int32)
+
+            pos_pred = np.nonzero(predictions_np)
+            pos_vols = volumes_np[pos_pred]                #use centroids and code util func to extract vol from cen - so that can have 64^3 so can augment via trans
+            corr_labels = labels_np[pos_pred]
+            save_dir = save_dirs[corr_labels[0]]
+            [utils.save_cube_img(os.path.join(save_dir,uid + "_" + str(index) + "_.png"), np.squeeze(volume)*255, 4, 8) for index,volume in enumerate(pos_vols)]
+
+            file_count+=1
+            count+=np.shape(pos_vols)[0]
+            print("{} : {} : {} label and {} positive sub volumes".format(file_count,uid,corr_labels[0],np.shape(pos_vols)[0]))
+
+        except Exception as e:
+            print("Exception: {}".format(e))
+
+    print("Total count: {}".format(count))
+                   
+def nsdb_main(mag):
+    data_dir = os.path.join(settings.CA_TRAIN_DATA_DIR,"TFRecordsTest","NDSB",str(mag))
     tf_data_files = os.listdir(data_dir)  
-    tf_test_set = tf_data_files[0:8]
-    tf_test_paths = list(map(lambda file: os.path.join(data_dir,file),tf_test_set))
-    test(tf_test_paths)
+    tf_test_set = tf_data_files
+    tf_test_paths = list(map(lambda file_name: os.path.join(data_dir,file_name),tf_test_set))
+    test_cancer(tf_test_paths,mag=mag) 
+    
 
 if __name__=="__main__":
-    main()    
+    ndsb_main(mag=2)    
